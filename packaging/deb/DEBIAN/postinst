@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -e
+
+APP_DIR="/opt/fleet-ansible"
+CONFIG_DIR="/etc/fleet"
+
+echo "==> Configuring fleet-ansible..."
+
+# 1. Configuration directory
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+
+if [ ! -f "$CONFIG_DIR/openbao.env" ]; then
+    if [ -f "$CONFIG_DIR/openbao.env.example" ]; then
+        cp "$CONFIG_DIR/openbao.env.example" "$CONFIG_DIR/openbao.env"
+    else
+        cat << 'EOF' > "$CONFIG_DIR/openbao.env"
+# OpenBao connection settings for fleet-ansible
+OPENBAO_URL=http://10.0.0.29:8200
+OPENBAO_ROLE_ID=92ac0442-cc8b-779b-bee1-58b45fb66ddc
+OPENBAO_SECRET_ID=
+EOF
+    fi
+    chmod 600 "$CONFIG_DIR/openbao.env"
+    echo "Created $CONFIG_DIR/openbao.env - please configure OPENBAO_SECRET_ID."
+fi
+
+# 2. Setup Python environment for Ansible
+echo "Setting up Python environment for Ansible..."
+if [ ! -d "$APP_DIR/.venv" ]; then
+    python3 -m venv "$APP_DIR/.venv"
+fi
+
+"$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
+"$APP_DIR/.venv/bin/pip" install --quiet ansible-core
+
+# 3. Permissions
+chmod 755 "$APP_DIR/inventory/orangutan.py"
+chmod 755 /usr/local/bin/fleet-ansible 2>/dev/null || true
+
+# 4. Systemd configuration
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    systemctl enable fleet-ansible-renew-cert.timer || true
+    systemctl start fleet-ansible-renew-cert.timer 2>/dev/null || true
+    systemctl enable fleet-ansible.timer || true
+    systemctl start fleet-ansible.timer 2>/dev/null || true
+fi
+
+echo ""
+echo "================================================================"
+echo "fleet-ansible installed successfully!"
+echo ""
+echo "Next Steps:"
+echo "1. Configure your OpenBao SECRET_ID in $CONFIG_DIR/openbao.env"
+echo "2. Issue the controller's SSH certificate:"
+echo "   fleet-ansible renew-cert"
+echo "3. Run the hybrid fleet bootstrap:"
+echo "   fleet-ansible bootstrap"
+echo "================================================================"
+echo ""
+
+exit 0

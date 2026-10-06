@@ -1,0 +1,14 @@
+[Unit]
+Description=Renew fleet-ansible Controller SSH Certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/fleet-ansible renew-cert
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,5 @@
+build/
+dist/
 *.retry
 *.pyc
 __pycache__/

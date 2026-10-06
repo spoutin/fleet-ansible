@@ -1,0 +1,14 @@
+[Unit]
+Description=Spoutin Fleet Automation & SSH CA Trust Sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/fleet-ansible site
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

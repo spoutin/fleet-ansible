@@ -1,0 +1,12 @@
+Package: fleet-ansible
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: Spoutin PKI & Fleet Team <admin@spoutin.org>
+Depends: python3, python3-venv, openssh-client, sshpass, curl, jq, ca-certificates
+Description: Spoutin Fleet Automation & SSH CA Trust Manager
+ Automated fleet management and OpenSSH Certificate Authority trust deployment
+ for the Spoutin Homelab. Discovers hosts dynamically via LAN-Orangutan,
+ reads secrets from OpenBao, and configures SSH CA trust with zero-SSH Proxmox
+ injection and network SSH fallback.

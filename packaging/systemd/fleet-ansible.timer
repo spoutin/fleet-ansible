@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily sync of Spoutin Fleet SSH CA Trust
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

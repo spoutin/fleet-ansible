@@ -1,0 +1,85 @@
+name: Build and Release Debian Package
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Playbooks & Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ansible Core
+        run: pip install ansible-core
+
+      - name: Validate Python Syntax
+        run: python3 -m py_compile inventory/orangutan.py
+
+      - name: Validate Playbook Syntax
+        run: |
+          ansible-playbook --syntax-check playbooks/bootstrap.yml
+          ansible-playbook --syntax-check playbooks/site.yml
+          ansible-playbook --syntax-check playbooks/renew-controller-cert.yml
+
+      - name: Validate Shell Script Syntax
+        run: |
+          bash -n bin/fleet-ansible
+          bash -n scripts/build-deb.sh
+          bash -n scripts/setup-lxc.sh
+          bash -n scripts/setup-openbao.sh
+          bash -n packaging/deb/DEBIAN/postinst
+          bash -n packaging/deb/DEBIAN/prerm
+
+  build-deb:
+    name: Build .deb Package
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Package Version
+        id: get_version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.1.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debian Package
+        run: |
+          ./scripts/build-deb.sh "${{ steps.get_version.outputs.version }}" "amd64"
+
+      - name: Upload Debian Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleet-ansible-deb
+          path: dist/*.deb
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') || contains(github.ref, 'rc') }}

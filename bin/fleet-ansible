@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# fleet-ansible CLI wrapper
+set -e
+
+APP_DIR="/opt/fleet-ansible"
+ENV_FILE="/etc/fleet/openbao.env"
+
+# Fallback to current directory if not installed in /opt
+if [ ! -d "$APP_DIR" ] && [ -d "./inventory" ]; then
+    APP_DIR="$(pwd)"
+fi
+
+# Load credentials from /etc/fleet/openbao.env if present
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+elif [ -f "$APP_DIR/openbao.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$APP_DIR/openbao.env"
+    set +a
+fi
+
+# Locate Python and Ansible binaries
+if [ -x "$APP_DIR/.venv/bin/ansible-playbook" ]; then
+    ANSIBLE_PLAYBOOK="$APP_DIR/.venv/bin/ansible-playbook"
+    ANSIBLE_CMD="$APP_DIR/.venv/bin/ansible"
+    PYTHON_CMD="$APP_DIR/.venv/bin/python3"
+else
+    ANSIBLE_PLAYBOOK="ansible-playbook"
+    ANSIBLE_CMD="ansible"
+    PYTHON_CMD="python3"
+fi
+
+show_help() {
+    cat << EOF
+fleet-ansible - Spoutin Fleet Automation & SSH CA Trust Manager
+
+Usage:
+  fleet-ansible [command] [options]
+
+Commands:
+  bootstrap     Run hybrid bootstrap (Phase 1 Proxmox push + Phase 2 SSH fallback)
+  site          Enforce SSH CA trust across all managed hosts (routine run)
+  renew-cert    Generate controller key and request SSH certificate from OpenBao
+  inventory     Query dynamic inventory from LAN-Orangutan (outputs JSON)
+  ping          Test SSH connectivity to all managed hosts via ansible ping
+  raw           Execute arbitrary ansible-playbook arguments directly
+  help          Display this help message
+
+Options:
+  Any extra options provided after a command are passed directly to Ansible.
+  Examples:
+    fleet-ansible bootstrap --check
+    fleet-ansible site --limit debian
+    fleet-ansible raw playbooks/site.yml -vvv
+EOF
+}
+
+CMD="${1:-help}"
+shift || true
+
+case "$CMD" in
+    bootstrap)
+        echo "==> Executing Hybrid Fleet Bootstrap..."
+        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/bootstrap.yml" "$@"
+        ;;
+    site)
+        echo "==> Enforcing SSH CA Trust Across Managed Fleet..."
+        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/site.yml" "$@"
+        ;;
+    renew-cert)
+        echo "==> Issuing Controller SSH Certificate via OpenBao..."
+        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/renew-controller-cert.yml" "$@"
+        ;;
+    inventory)
+        if command -v jq >/dev/null 2>&1; then
+            exec "$PYTHON_CMD" "$APP_DIR/inventory/orangutan.py" --list "$@" | jq .
+        else
+            exec "$PYTHON_CMD" "$APP_DIR/inventory/orangutan.py" --list "$@"
+        fi
+        ;;
+    ping)
+        echo "==> Pinging managed hosts..."
+        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" managed_hosts -m ping "$@"
+        ;;
+    raw)
+        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$@"
+        ;;
+    help|--help|-h)
+        show_help
+        exit 0
+        ;;
+    *)
+        echo "Error: Unknown command '$CMD'" >&2
+        echo "" >&2
+        show_help >&2
+        exit 1
+        ;;
+esac
