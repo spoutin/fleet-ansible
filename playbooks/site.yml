@@ -1,0 +1,9 @@
+---
+# Master Fleet Playbook
+# Enforces SSH CA trust and configuration idempotently across all managed hosts
+
+- name: Enforce SSH CA Trust Across Managed Fleet
+  hosts: managed_hosts
+  gather_facts: false
+  roles:
+    - ssh_ca_client

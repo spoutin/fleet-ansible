@@ -1,0 +1,4 @@
+---
+# Configuration for Proxmox hypervisor hosts
+ansible_user: root
+ansible_ssh_pipelining: true

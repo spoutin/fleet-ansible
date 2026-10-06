@@ -1,0 +1,77 @@
+---
+- name: Ensure /etc/ssh directory exists
+  ansible.builtin.file:
+    path: "{{ ssh_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Download SSH CA public key
+  ansible.builtin.get_url:
+    url: "{{ ssh_ca_public_key_url }}"
+    dest: "{{ ssh_ca_keys_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: false
+  register: download_ca_key
+  ignore_errors: true
+
+- name: Fallback download of SSH CA public key from OpenBao directly
+  ansible.builtin.get_url:
+    url: "{{ ssh_ca_fallback_url }}"
+    dest: "{{ ssh_ca_keys_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: false
+  when: download_ca_key is failed
+
+- name: Check if /etc/ssh/sshd_config.d is supported
+  ansible.builtin.stat:
+    path: "{{ sshd_config_dropin_dir }}"
+  register: dropin_dir_stat
+
+- name: Set dropin support fact
+  ansible.builtin.set_fact:
+    use_dropin: "{{ dropin_dir_stat.stat.exists or supports_sshd_config_d | default(true) }}"
+
+- name: Deploy SSH CA drop-in configuration
+  when: use_dropin | bool
+  block:
+    - name: Ensure /etc/ssh/sshd_config.d exists
+      ansible.builtin.file:
+        path: "{{ sshd_config_dropin_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure Include /etc/ssh/sshd_config.d/*.conf exists in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "Include /etc/ssh/sshd_config.d/*.conf"
+        insertbefore: BOF
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+      notify: reload sshd
+
+    - name: Deploy 60-pki-ssh-ca.conf drop-in
+      ansible.builtin.template:
+        src: 60-pki-ssh-ca.conf.j2
+        dest: "{{ sshd_config_dropin_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload sshd
+
+- name: Configure sshd_config directly (for systems without drop-in directory)
+  when: not (use_dropin | bool)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?TrustedUserCAKeys'
+    line: "TrustedUserCAKeys {{ ssh_ca_keys_path }}"
+    state: present
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: reload sshd

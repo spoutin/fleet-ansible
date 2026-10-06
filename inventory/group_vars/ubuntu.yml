@@ -1,0 +1,3 @@
+---
+sshd_service_name: "ssh"
+supports_sshd_config_d: true

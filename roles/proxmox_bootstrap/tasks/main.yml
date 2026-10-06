@@ -1,0 +1,99 @@
+---
+# Proxmox VE Host-Level Bootstrap Role
+# Executes directly on Proxmox VE hypervisor nodes to inject SSH CA trust into
+# LXC containers (via `pct push`/`pct exec`) and QEMU VMs (via `qm guest exec`).
+# This achieves 100% zero-SSH, passwordless bootstrapping for virtualized guests!
+
+- name: Download SSH CA public key to hypervisor staging directory
+  ansible.builtin.get_url:
+    url: "{{ ssh_ca_public_key_url }}"
+    dest: /tmp/pki-trusted-ca.pub
+    mode: '0644'
+    validate_certs: false
+  register: pve_dl_ca
+  ignore_errors: true
+
+- name: Fallback download SSH CA key from OpenBao directly
+  ansible.builtin.get_url:
+    url: "{{ ssh_ca_fallback_url }}"
+    dest: /tmp/pki-trusted-ca.pub
+    mode: '0644'
+    validate_certs: false
+  when: pve_dl_ca is failed
+
+- name: Stage 60-pki-ssh-ca.conf template on hypervisor
+  ansible.builtin.template:
+    src: 60-pki-ssh-ca.conf.j2
+    dest: /tmp/60-pki-ssh-ca.conf
+    mode: '0644'
+
+- name: Discover running LXC container IDs on hypervisor
+  ansible.builtin.command:
+    cmd: pct list
+  register: pct_output
+  changed_when: false
+
+- name: Parse running LXC VMIDs
+  ansible.builtin.set_fact:
+    running_lxcs: "{{ pct_output.stdout_lines[1:] | map('regex_search', '^([0-9]+)\\s+running', '\\1') | select('defined') | map('first') | list }}"
+
+- name: Inject SSH CA into running LXC containers
+  loop: "{{ running_lxcs }}"
+  ansible.builtin.shell: |
+    # Ensure /etc/ssh and drop-in dir exist inside the LXC
+    pct exec {{ item }} -- mkdir -p /etc/ssh/sshd_config.d
+    
+    # Push the CA public key
+    pct push {{ item }} /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub -perms 644
+    
+    # Push the sshd drop-in configuration
+    pct push {{ item }} /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf -perms 644
+    
+    # Ensure Include directive is present in /etc/ssh/sshd_config if missing
+    pct exec {{ item }} -- sh -c 'grep -q "Include /etc/ssh/sshd_config.d/\*\.conf" /etc/ssh/sshd_config || sed -i "1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|" /etc/ssh/sshd_config'
+    
+    # Validate configuration and reload sshd safely
+    pct exec {{ item }} -- /usr/sbin/sshd -t && (pct exec {{ item }} -- systemctl reload ssh || pct exec {{ item }} -- systemctl reload sshd || pct exec {{ item }} -- rc-service sshd reload || true)
+  register: lxc_bootstrap_result
+  changed_when: true
+  ignore_errors: true
+
+- name: Discover running QEMU VM IDs on hypervisor
+  ansible.builtin.command:
+    cmd: qm list
+  register: qm_output
+  changed_when: false
+
+- name: Parse running QEMU VMIDs
+  ansible.builtin.set_fact:
+    running_vms: "{{ qm_output.stdout_lines[1:] | map('regex_search', '^\\s*([0-9]+)\\s+.*?running', '\\1') | select('defined') | map('first') | list }}"
+
+- name: Inject SSH CA into QEMU VMs with active guest agent
+  loop: "{{ running_vms }}"
+  ansible.builtin.shell: |
+    # Test if guest agent is active
+    if qm guest cmd {{ item }} ping 2>/dev/null; then
+      CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
+      CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
+      
+      qm guest exec {{ item }} -- /bin/sh -c "mkdir -p /etc/ssh/sshd_config.d && \
+        echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && \
+        chmod 644 /etc/ssh/trusted-user-ca-keys.pub && \
+        echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
+        chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
+        (grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config) && \
+        /usr/sbin/sshd -t && (systemctl reload ssh || systemctl reload sshd || true)"
+    else
+      echo "Guest agent not available on VM {{ item }}, skipping to network SSH fallback."
+    fi
+  register: qm_bootstrap_result
+  changed_when: "'Guest agent not available' not in qm_bootstrap_result.stdout"
+  ignore_errors: true
+
+- name: Remove temporary hypervisor staging files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/pki-trusted-ca.pub
+    - /tmp/60-pki-ssh-ca.conf

@@ -1,0 +1,10 @@
+*.retry
+*.pyc
+__pycache__/
+.venv/
+*.swp
+*.swo
+.DS_Store
+.env
+openbao.env
+credentials.env

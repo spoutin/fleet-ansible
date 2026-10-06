@@ -1,0 +1,22 @@
+---
+# Hybrid Fleet Bootstrap Playbook
+# 1. Proxmox Host Injection: Passwordless push to all running LXCs and VMs via Proxmox
+# 2. Network SSH Fallback: Configures bare metal and any non-virtualized nodes via SSH
+
+- name: "Phase 1: Proxmox Host-Level Injection (Zero-SSH)"
+  hosts: hypervisors
+  gather_facts: false
+  roles:
+    - proxmox_bootstrap
+  tags:
+    - proxmox
+    - bootstrap
+
+- name: "Phase 2: Network SSH Configuration (Managed Hosts & Fallback)"
+  hosts: managed_hosts
+  gather_facts: false
+  roles:
+    - ssh_ca_client
+  tags:
+    - ssh
+    - bootstrap

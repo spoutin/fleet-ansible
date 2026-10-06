@@ -1,0 +1,88 @@
+---
+# Self-Enrollment & Certificate Renewal for Ansible Control Node
+# Generates an Ed25519 keypair on the Ansible LXC and requests an SSH
+# certificate from OpenBao SSH CA with principals `root,operator`.
+
+- name: Issue SSH Certificate for Ansible Control Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    controller_key_path: "{{ lookup('env', 'HOME') }}/.ssh/ansible_controller"
+    controller_cert_path: "{{ lookup('env', 'HOME') }}/.ssh/ansible_controller-cert.pub"
+    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('http://10.0.0.29:8200', true) }}"
+    openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"
+    openbao_secret_id: "{{ lookup('env', 'OPENBAO_SECRET_ID') }}"
+    cert_ttl: "8760h"  # 1 year
+
+  tasks:
+    - name: Ensure ~/.ssh directory exists
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.ssh"
+        state: directory
+        mode: '0700'
+
+    - name: Check if controller private key exists
+      ansible.builtin.stat:
+        path: "{{ controller_key_path }}"
+      register: key_stat
+
+    - name: Generate Ed25519 controller keypair if absent
+      ansible.builtin.command:
+        cmd: "ssh-keygen -t ed25519 -f {{ controller_key_path }} -N '' -C 'ansible-controller@fleet'"
+      when: not key_stat.stat.exists
+
+    - name: Read controller public key
+      ansible.builtin.slurp:
+        src: "{{ controller_key_path }}.pub"
+      register: pubkey_slurp
+
+    - name: Authenticate to OpenBao via AppRole
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/auth/approle/login"
+        method: POST
+        body_format: json
+        body:
+          role_id: "{{ openbao_role_id }}"
+          secret_id: "{{ openbao_secret_id }}"
+        status_code: 200
+        validate_certs: false
+      register: bao_login
+
+    - name: Request signed SSH Certificate from OpenBao CA
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/ssh/sign/operator-user"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ bao_login.json.auth.client_token }}"
+        body_format: json
+        body:
+          public_key: "{{ pubkey_slurp.content | b64decode }}"
+          valid_principals: "operator,root"
+          ttl: "{{ cert_ttl }}"
+        status_code: 200
+        validate_certs: false
+      register: sign_response
+
+    - name: Write signed certificate to controller ~/.ssh
+      ansible.builtin.copy:
+        content: "{{ sign_response.json.data.signed_key }}"
+        dest: "{{ controller_cert_path }}"
+        mode: '0644'
+
+    - name: Configure ~/.ssh/config to use certificate automatically
+      ansible.builtin.blockinfile:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/config"
+        create: true
+        mode: '0600'
+        marker: "# {mark} ANSIBLE CONTROLLER CERTIFICATE CONFIG"
+        block: |
+          Host 10.0.*
+            IdentityFile {{ controller_key_path }}
+            CertificateFile {{ controller_cert_path }}
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+
+    - name: Display success message
+      ansible.builtin.debug:
+        msg: "Successfully provisioned SSH certificate for Ansible controller at {{ controller_cert_path }} (valid for {{ cert_ttl }})."

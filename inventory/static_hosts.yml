@@ -1,0 +1,17 @@
+---
+# Static Host Definitions
+# Defines the Proxmox hypervisors used in Phase 1 (zero-SSH bootstrap)
+# and any bare metal systems that may not run the dynamic agent.
+
+all:
+  children:
+    hypervisors:
+      hosts:
+        pve1:
+          ansible_host: 10.0.0.80  # Replace with Proxmox Node 1 IP
+          ansible_user: root
+        pve2:
+          ansible_host: 10.0.0.81  # Replace with Proxmox Node 2 IP
+          ansible_user: root
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
