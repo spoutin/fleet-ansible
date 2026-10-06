@@ -55,7 +55,7 @@ def get_openbao_secrets() -> Dict[str, Any]:
     bao_url = (
         os.getenv("OPENBAO_URL")
         or file_env.get("OPENBAO_URL")
-        or "http://10.0.0.29:8200"
+        or "https://10.0.0.29:8200"
     ).rstrip("/")
     role_id = os.getenv("OPENBAO_ROLE_ID") or file_env.get("OPENBAO_ROLE_ID") or "92ac0442-cc8b-779b-bee1-58b45fb66ddc"
     secret_id = os.getenv("OPENBAO_SECRET_ID") or file_env.get("OPENBAO_SECRET_ID")
@@ -173,7 +173,6 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
     orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get(
         "orangutan_password"
     )
-    fallback_ssh_password = bao_secrets.get("ansible_ssh_password")
 
     try:
         devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
@@ -205,9 +204,6 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
             "orangutan_label": dev.get("label", ""),
             "ansible_managed": is_managed,
         }
-
-        if fallback_ssh_password and fallback_ssh_password != "CHANGE_ME":
-            hostvars["ansible_password"] = fallback_ssh_password
 
         inventory["_meta"]["hostvars"][host_name] = hostvars
         inventory["all"]["hosts"].append(host_name)

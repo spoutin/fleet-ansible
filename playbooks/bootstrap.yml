@@ -15,6 +15,57 @@
 - name: "Phase 2: Network SSH Configuration (Managed Hosts & Fallback)"
   hosts: managed_hosts
   gather_facts: false
+  vars:
+    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://10.0.0.29:8200', true) }}"
+    openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"
+    openbao_secret_id: "{{ lookup('env', 'OPENBAO_SECRET_ID') }}"
+  pre_tasks:
+    - name: Fetch fallback SSH password from OpenBao into memory
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Login to OpenBao via AppRole
+          ansible.builtin.uri:
+            url: "{{ openbao_url }}/v1/auth/approle/login"
+            method: POST
+            body_format: json
+            body:
+              role_id: "{{ openbao_role_id }}"
+              secret_id: "{{ openbao_secret_id }}"
+            status_code: 200
+            validate_certs: false
+          register: bao_approle_login
+          no_log: true
+          when: openbao_secret_id | default('') != ""
+
+        - name: Fetch fleet secrets from OpenBao
+          ansible.builtin.uri:
+            url: "{{ openbao_url }}/v1/secret/data/fleet"
+            method: GET
+            headers:
+              X-Vault-Token: "{{ bao_approle_login.json.auth.client_token }}"
+            status_code: 200
+            validate_certs: false
+          register: fleet_secrets_resp
+          no_log: true
+          when:
+            - openbao_secret_id | default('') != ""
+            - bao_approle_login is not skipped
+
+        - name: Set in-memory fallback SSH password
+          ansible.builtin.set_fact:
+            ansible_password: "{{ fleet_secrets_resp.json.data.data.ansible_ssh_password }}"
+          delegate_to: "{{ item }}"
+          delegate_facts: true
+          loop: "{{ ansible_play_hosts }}"
+          no_log: true
+          when:
+            - fleet_secrets_resp is not skipped
+            - fleet_secrets_resp.json is defined
+            - fleet_secrets_resp.json.data.data.ansible_ssh_password is defined
+            - fleet_secrets_resp.json.data.data.ansible_ssh_password != "CHANGE_ME"
+      ignore_errors: true
+
   roles:
     - ssh_ca_client
   tags:
