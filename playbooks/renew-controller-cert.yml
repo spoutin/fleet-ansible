@@ -49,6 +49,54 @@
         validate_certs: false
       register: bao_login
 
+    - name: Fetch fleet secrets from OpenBao
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/secret/data/fleet"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ bao_login.json.auth.client_token }}"
+        status_code: 200
+        validate_certs: false
+      register: fleet_secrets_resp
+      ignore_errors: true
+
+    - name: Write controller private key from OpenBao if available
+      ansible.builtin.copy:
+        content: "{{ fleet_secrets_resp.json.data.data.ansible_ssh_private_key }}"
+        dest: "{{ controller_key_path }}"
+        mode: '0600'
+      when:
+        - fleet_secrets_resp.json is defined
+        - fleet_secrets_resp.json.data.data.ansible_ssh_private_key is defined
+        - fleet_secrets_resp.json.data.data.ansible_ssh_private_key | length > 0
+        - not key_stat.stat.exists
+
+    - name: Write controller public key from OpenBao if available
+      ansible.builtin.copy:
+        content: "{{ fleet_secrets_resp.json.data.data.ansible_ssh_public_key }}"
+        dest: "{{ controller_key_path }}.pub"
+        mode: '0644'
+      when:
+        - fleet_secrets_resp.json is defined
+        - fleet_secrets_resp.json.data.data.ansible_ssh_public_key is defined
+        - fleet_secrets_resp.json.data.data.ansible_ssh_public_key | length > 0
+        - not key_stat.stat.exists
+
+    - name: Re-check if controller private key exists
+      ansible.builtin.stat:
+        path: "{{ controller_key_path }}"
+      register: key_stat_after_bao
+
+    - name: Generate Ed25519 controller keypair if absent
+      ansible.builtin.command:
+        cmd: "ssh-keygen -t ed25519 -f {{ controller_key_path }} -N '' -C 'ansible-controller@fleet'"
+      when: not key_stat_after_bao.stat.exists
+
+    - name: Read controller public key
+      ansible.builtin.slurp:
+        src: "{{ controller_key_path }}.pub"
+      register: pubkey_slurp
+
     - name: Request signed SSH Certificate from OpenBao CA
       ansible.builtin.uri:
         url: "{{ openbao_url }}/v1/ssh/sign/operator-user"
@@ -77,11 +125,10 @@
         mode: '0600'
         marker: "# {mark} ANSIBLE CONTROLLER CERTIFICATE CONFIG"
         block: |
-          Host 10.0.*
+          Host *
             User ansible
             IdentityFile {{ controller_key_path }}
             CertificateFile {{ controller_cert_path }}
-            IdentitiesOnly yes
             StrictHostKeyChecking accept-new
 
     - name: Display success message

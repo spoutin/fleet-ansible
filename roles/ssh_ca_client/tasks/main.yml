@@ -23,6 +23,27 @@
     validate: '/usr/sbin/visudo -cf %s'
   ignore_errors: true
 
+- name: Ensure ~/.ssh directory exists for ansible user
+  ansible.builtin.file:
+    path: /home/ansible/.ssh
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: '0700'
+  ignore_errors: true
+
+- name: Authorize controller public key for ansible user
+  ansible.builtin.lineinfile:
+    path: /home/ansible/.ssh/authorized_keys
+    create: true
+    owner: ansible
+    group: ansible
+    mode: '0600'
+    line: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/ansible_controller.pub', errors='ignore') }}"
+    state: present
+  when: lookup('file', lookup('env', 'HOME') + '/.ssh/ansible_controller.pub', errors='ignore') != ''
+  ignore_errors: true
+
 - name: Ensure /etc/ssh directory exists
   ansible.builtin.file:
     path: "{{ ssh_config_dir }}"

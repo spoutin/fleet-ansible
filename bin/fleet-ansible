@@ -48,6 +48,7 @@ Commands:
   install-pki [target] Install and configure SSH CA trust on target (or whole fleet)
   ping [target]        Test SSH connectivity (IP, hostname, group, or whole fleet)
   renew-cert           Generate controller key and request SSH certificate from OpenBao
+  show-key             Display controller public key (to paste into TrueNAS/cloud-init)
   inventory            Query dynamic inventory from LAN-Orangutan (outputs JSON)
   raw                  Execute arbitrary ansible-playbook arguments directly
   help                 Display this help message
@@ -273,6 +274,24 @@ case "$CMD" in
             run_ansible_cmd "${PING_INV[@]}" "$PING_TARGET" -m ping "${EXTRA_ARGS[@]}"
         else
             run_ansible_cmd "${PING_INV[@]}" "$PING_TARGET" -m ping -o "${EXTRA_ARGS[@]}" 2>/dev/null
+        fi
+        ;;
+    show-key|public-key)
+        PUB_KEY="$HOME/.ssh/ansible_controller.pub"
+        if [ ! -f "$PUB_KEY" ] && [ -f "/root/.ssh/ansible_controller.pub" ]; then
+            PUB_KEY="/root/.ssh/ansible_controller.pub"
+        fi
+        if [ -f "$PUB_KEY" ]; then
+            echo "==> Ansible Controller Public Key ($PUB_KEY):"
+            echo ""
+            cat "$PUB_KEY"
+            echo ""
+            echo "Tip: Paste this key into /home/ansible/.ssh/authorized_keys (or TrueNAS / cloud-init)"
+            echo "on servers where password authentication is disabled."
+        else
+            echo "Notice: Controller key not found at $PUB_KEY" >&2
+            echo "Run 'fleet-ansible renew-cert' first to generate and enroll the key." >&2
+            exit 1
         fi
         ;;
     raw)
