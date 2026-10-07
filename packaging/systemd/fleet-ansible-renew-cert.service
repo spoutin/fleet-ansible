@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/local/bin/fleet-ansible renew-cert
+ExecStart=/usr/local/bin/fleet-ansible enroll
 StandardOutput=journal
 StandardError=journal
 

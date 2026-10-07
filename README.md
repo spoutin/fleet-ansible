@@ -81,7 +81,7 @@ fleet-ansible/
 │       └── redhat.yml             # sshd service: sshd
 ├── playbooks/
 │   ├── bootstrap.yml              # Hybrid rollout (Proxmox push -> SSH fallback)
-│   ├── renew-controller-cert.yml  # Signs/renews the Ansible LXC's own certificate
+│   ├── enroll.yml                 # Controller enrollment & 1-year SSH certificate
 │   └── install-pki.yml            # Routine fleet-wide configuration
 ├── roles/
 │   ├── proxmox_bootstrap/         # Executes pct/qm push & exec from hypervisors
@@ -109,9 +109,9 @@ OPENBAO_ROLE_ID=92ac0442-cc8b-779b-bee1-58b45fb66ddc
 OPENBAO_SECRET_ID=<your-secret-id>
 ```
 
-### 3. Issue the Controller's SSH Certificate
+### 3. Enroll the Controller (Issue SSH Certificate)
 ```bash
-ansible-playbook playbooks/renew-controller-cert.yml
+fleet-ansible enroll
 ```
 
 ### 4. Run the Hybrid Bootstrap

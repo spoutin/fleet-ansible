@@ -99,4 +99,23 @@ if [[ "${COMPREPLY[*]}" != *"hypervisors"* ]]; then
 fi
 echo "PASS: Bash completion completed 'hypervisors'"
 
+# Test fleet-ansible completion command
+completion_output="$("$APP_DIR/bin/fleet-ansible" completion)"
+if [[ "$completion_output" != *"complete -F _fleet_ansible_complete fleet-ansible"* ]]; then
+    echo "FAIL: fleet-ansible completion output missing complete directive" >&2
+    exit 1
+fi
+echo "PASS: fleet-ansible completion output valid"
+
+# Source the dynamic completion output and verify 'enroll' is completed
+eval "$completion_output"
+COMP_WORDS=("fleet-ansible" "en")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"enroll"* ]]; then
+    echo "FAIL: Dynamic completion output failed to complete 'enroll': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed 'enroll'"
+
 echo "All CLI argument and resolution tests passed successfully!"
