@@ -87,8 +87,11 @@ case "$CMD" in
         ;;
     ping)
         echo "==> Pinging hosts..."
-        export ANSIBLE_STDOUT_CALLBACK=oneline
-        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping "$@"
+        if [[ "$*" == *"-v"* ]]; then
+            exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping "$@"
+        else
+            exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping -o "$@" 2>/dev/null
+        fi
         ;;
     raw)
         exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$@"
