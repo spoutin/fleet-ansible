@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/local/bin/fleet-ansible site
+ExecStart=/usr/local/bin/fleet-ansible install-pki
 StandardOutput=journal
 StandardError=journal
 

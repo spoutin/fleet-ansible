@@ -38,7 +38,7 @@ jobs:
       - name: Validate Playbook Syntax
         run: |
           ansible-playbook --syntax-check playbooks/bootstrap.yml
-          ansible-playbook --syntax-check playbooks/site.yml
+          ansible-playbook --syntax-check playbooks/install-pki.yml
           ansible-playbook --syntax-check playbooks/renew-controller-cert.yml
 
       - name: Validate Shell Script Syntax and Tests

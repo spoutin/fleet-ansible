@@ -45,7 +45,7 @@ Usage:
 
 Commands:
   bootstrap [target]   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
-  site [target]        Enforce SSH CA trust for a target (IP, hostname, group, or whole fleet)
+  install-pki [target] Install and configure SSH CA trust on target (or whole fleet)
   ping [target]        Test SSH connectivity (IP, hostname, group, or whole fleet)
   renew-cert           Generate controller key and request SSH certificate from OpenBao
   inventory            Query dynamic inventory from LAN-Orangutan (outputs JSON)
@@ -56,7 +56,8 @@ Targeting:
   IP, Hostname, and Group can be used interchangeably directly or with --limit:
     fleet-ansible bootstrap 10.0.0.82 -k
     fleet-ansible bootstrap truenas
-    fleet-ansible site debian
+    fleet-ansible install-pki debian
+    fleet-ansible install-pki 10.0.0.82
     fleet-ansible ping 10.0.0.41
     fleet-ansible ping hypervisors
     fleet-ansible bootstrap --limit hypervisors
@@ -107,7 +108,7 @@ case "$CMD" in
         fi
         exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/bootstrap.yml" "${EXTRA_ARGS[@]}"
         ;;
-    site)
+    install-pki)
         parse_target "$@"
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
@@ -116,11 +117,11 @@ case "$CMD" in
                 INV_ARGS+=(-i "$TARGET,")
             fi
             LIMIT_ARGS=(--limit "$TARGET")
-            echo "==> Enforcing SSH CA Trust for [$TARGET]..."
+            echo "==> Installing SSH CA PKI Trust for [$TARGET]..."
         else
-            echo "==> Enforcing SSH CA Trust Across Managed Fleet..."
+            echo "==> Installing SSH CA PKI Trust Across Managed Fleet..."
         fi
-        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/site.yml" "${EXTRA_ARGS[@]}"
+        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${EXTRA_ARGS[@]}"
         ;;
     renew-cert)
         echo "==> Issuing Controller SSH Certificate via OpenBao..."

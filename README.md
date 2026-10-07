@@ -82,7 +82,7 @@ fleet-ansible/
 ├── playbooks/
 │   ├── bootstrap.yml              # Hybrid rollout (Proxmox push -> SSH fallback)
 │   ├── renew-controller-cert.yml  # Signs/renews the Ansible LXC's own certificate
-│   └── site.yml                   # Routine fleet-wide configuration
+│   └── install-pki.yml            # Routine fleet-wide configuration
 ├── roles/
 │   ├── proxmox_bootstrap/         # Executes pct/qm push & exec from hypervisors
 │   └── ssh_ca_client/             # In-guest sshd CA configuration & safety handlers
@@ -122,5 +122,5 @@ ansible-playbook playbooks/bootstrap.yml
 ### 5. Routine Maintenance
 To update or verify CA trust across all managed hosts:
 ```bash
-ansible-playbook playbooks/site.yml
+fleet-ansible install-pki
 ```
