@@ -6,8 +6,7 @@
 - name: "Phase 1: Proxmox Host-Level Injection (Zero-SSH)"
   hosts: hypervisors
   gather_facts: false
-  vars:
-    ansible_user: "{{ bootstrap_hypervisor_user | default('root') }}"
+  become: true
   roles:
     - proxmox_bootstrap
   tags:
@@ -18,6 +17,7 @@
   hosts: managed_hosts
   gather_facts: false
   ignore_unreachable: true
+  become: true
   vars:
     openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://secrets.int.spoutin.org', true) }}"
     openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"
