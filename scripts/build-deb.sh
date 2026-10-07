@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Script to assemble fleet-ansible Debian (.deb) package
-VERSION="${1:-0.4.0}"
+VERSION="${1:-0.4.1}"
 ARCH="${2:-amd64}"
 
 # Strip leading 'v' from version if present

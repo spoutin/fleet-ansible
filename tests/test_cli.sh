@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Sourced parse_target test
-source <(grep -A 25 'parse_target()' bin/fleet-ansible)
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_CMD="python3"
+
+# Extract helper functions from bin/fleet-ansible
+eval "$(sed -n '/^parse_target()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
+eval "$(sed -n '/^resolve_target()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
 
 test_target() {
     local expected_target="$1"
@@ -32,4 +36,22 @@ test_target "truenas" "" truenas
 test_target "hypervisors" "-k" -l hypervisors -k
 test_target "debian" "--check" debian --check
 
-echo "All CLI argument tests passed successfully!"
+# Test resolve_target with IP bypass
+TARGET="10.0.0.82"
+resolve_target
+if [ "$TARGET" != "10.0.0.82" ]; then
+    echo "FAIL: resolve_target modified IP target" >&2
+    exit 1
+fi
+echo "PASS: resolve_target bypassed for IP 10.0.0.82"
+
+# Test resolve_target with standard group bypass
+TARGET="hypervisors"
+resolve_target
+if [ "$TARGET" != "hypervisors" ]; then
+    echo "FAIL: resolve_target modified hypervisors group" >&2
+    exit 1
+fi
+echo "PASS: resolve_target bypassed for hypervisors"
+
+echo "All CLI argument and resolution tests passed successfully!"

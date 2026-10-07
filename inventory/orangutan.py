@@ -147,6 +147,76 @@ def classify_os_group(device: Dict[str, Any]) -> str:
     return "debian"
 
 
+def get_device_base_name(ip: str, dev: Dict[str, Any]) -> str:
+    """Generate normalized base name for a device."""
+    raw_name = (
+        dev.get("label")
+        or dev.get("custom_hostname")
+        or dev.get("hostname")
+        or ip
+    )
+    return "".join(c if c.isalnum() or c in ".-_" else "_" for c in raw_name)
+
+
+def find_devices_by_target(query: str, only_managed: bool = True) -> list:
+    """Find devices matching a query (by IP, hostname, custom_hostname, or label)."""
+    bao_secrets = get_openbao_secrets()
+    orangutan_url = (
+        os.getenv("ORANGUTAN_URL")
+        or bao_secrets.get("orangutan_url")
+        or "http://10.0.0.1:291"
+    ).rstrip("/")
+    orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get(
+        "orangutan_password"
+    )
+
+    try:
+        devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
+    except Exception:
+        return []
+
+    q = query.strip().lower()
+    matches = []
+
+    # First pass to compute duplicate counts for consistent naming
+    name_counts: Dict[str, int] = {}
+    filtered = {}
+    for ip, dev in devices.items():
+        is_managed = bool(dev.get("ansible_managed", False))
+        if only_managed and not is_managed:
+            continue
+        base_name = get_device_base_name(ip, dev)
+        name_counts[base_name] = name_counts.get(base_name, 0) + 1
+        filtered[ip] = (dev, base_name)
+
+    for ip, (dev, base_name) in filtered.items():
+        host_name = (
+            f"{base_name}-{ip.replace('.', '-')}"
+            if name_counts[base_name] > 1
+            else base_name
+        )
+        dev_hostname = (dev.get("hostname") or "").lower()
+        dev_custom = (dev.get("custom_hostname") or "").lower()
+        dev_label = (dev.get("label") or "").lower()
+
+        if (
+            ip == q
+            or base_name.lower() == q
+            or dev_hostname == q
+            or dev_custom == q
+            or dev_label == q
+        ):
+            matches.append({
+                "ip": ip,
+                "name": host_name,
+                "base_name": base_name,
+                "vendor": dev.get("vendor", "") or "Unknown",
+                "label": dev.get("label", ""),
+            })
+
+    return matches
+
+
 def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
     """Construct Ansible inventory JSON."""
     inventory: Dict[str, Any] = {
@@ -180,21 +250,29 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
         sys.stderr.write(f"Notice: LAN-Orangutan at {orangutan_url} unreachable: {e}\n")
         return inventory
 
+    # First pass: count base_names to detect collisions
+    managed_devices = {}
+    name_counts: Dict[str, int] = {}
     for ip, dev in devices.items():
         is_managed = bool(dev.get("ansible_managed", False))
-
         if only_managed and not is_managed:
             continue
+        base_name = get_device_base_name(ip, dev)
+        name_counts[base_name] = name_counts.get(base_name, 0) + 1
+        managed_devices[ip] = (dev, is_managed, base_name)
 
-        raw_name = (
-            dev.get("label")
-            or dev.get("custom_hostname")
-            or dev.get("hostname")
-            or ip
-        )
-        host_name = "".join(c if c.isalnum() or c in ".-_" else "_" for c in raw_name)
-        if host_name in inventory["_meta"]["hostvars"]:
-            host_name = f"{host_name}-{ip.replace('.', '-')}"
+    for ip, (dev, is_managed, base_name) in managed_devices.items():
+        # Disambiguate host key if base_name is shared by multiple devices
+        if name_counts[base_name] > 1:
+            host_name = f"{base_name}-{ip.replace('.', '-')}"
+            # Add base_name as a group containing all duplicates
+            if base_name not in inventory:
+                inventory[base_name] = {"hosts": []}
+                inventory["all"]["children"].append(base_name)
+            if host_name not in inventory[base_name]["hosts"]:
+                inventory[base_name]["hosts"].append(host_name)
+        else:
+            host_name = base_name
 
         hostvars: Dict[str, Any] = {
             "ansible_host": ip,
@@ -240,13 +318,20 @@ def main():
     parser.add_argument("--list", action="store_true", help="List all hosts")
     parser.add_argument("--host", help="Get host variables for a specific host")
     parser.add_argument(
+        "--find",
+        help="Find devices matching a query (by IP, hostname, or label) for disambiguation",
+    )
+    parser.add_argument(
         "--all-hosts",
         action="store_true",
         help="Include all online devices, ignoring ansible_managed flag",
     )
     args = parser.parse_args()
 
-    if args.host:
+    if args.find:
+        matches = find_devices_by_target(args.find, only_managed=not args.all_hosts)
+        print(json.dumps(matches, indent=2))
+    elif args.host:
         inv = build_inventory(only_managed=not args.all_hosts)
         print(json.dumps(inv["_meta"]["hostvars"].get(args.host, {}), indent=2))
     else:

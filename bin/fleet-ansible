@@ -89,12 +89,81 @@ parse_target() {
     done
 }
 
+resolve_target() {
+    if [ -z "$TARGET" ]; then
+        return
+    fi
+    if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        return
+    fi
+    case "$TARGET" in
+        all|managed_hosts|hypervisors|debian|ubuntu|alpine|redhat|proxmox|ungrouped)
+            return
+            ;;
+    esac
+
+    local find_output
+    find_output="$("$PYTHON_CMD" "$APP_DIR/inventory/orangutan.py" --find "$TARGET" 2>/dev/null || echo "[]")"
+    local count
+    count="$("$PYTHON_CMD" -c 'import json, sys; data=json.loads(sys.argv[1]); print(len(data))' "$find_output" 2>/dev/null || echo "0")"
+
+    if [ "$count" -gt 1 ]; then
+        if [ -t 0 ]; then
+            echo ""
+            echo "Multiple hosts found matching '$TARGET':"
+            "$PYTHON_CMD" -c '
+import json, sys
+data = json.loads(sys.argv[1])
+for i, d in enumerate(data, 1):
+    ip = d.get("ip")
+    name = d.get("name")
+    vendor = d.get("vendor")
+    lbl = d.get("label")
+    lbl_str = f" - {lbl}" if lbl else ""
+    print(f"  {i}) {ip} [{name}] ({vendor}{lbl_str})")
+' "$find_output"
+            local all_idx=$((count + 1))
+            echo "  $all_idx) All (run on all $count matching hosts)"
+            echo "  q) Cancel"
+            echo ""
+
+            while true; do
+                read -r -p "Select target [1-$all_idx, q]: " choice
+                case "$choice" in
+                    [qQ])
+                        echo "Operation cancelled."
+                        exit 0
+                        ;;
+                    "$all_idx"|[aA]|all|ALL)
+                        echo "==> Selected: All matching hosts ($TARGET)"
+                        break
+                        ;;
+                    *)
+                        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
+                            local selected_ip
+                            selected_ip="$("$PYTHON_CMD" -c "import json, sys; data=json.loads(sys.argv[1]); print(data[int(sys.argv[2])-1]['ip'])" "$find_output" "$choice")"
+                            echo "==> Selected: $selected_ip"
+                            TARGET="$selected_ip"
+                            break
+                        else
+                            echo "Invalid selection. Please choose 1-$all_idx or q."
+                        fi
+                        ;;
+                esac
+            done
+        else
+            echo "Notice: Multiple hosts found matching '$TARGET', targeting all matches non-interactively."
+        fi
+    fi
+}
+
 CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
     bootstrap)
         parse_target "$@"
+        resolve_target
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
         if [ -n "$TARGET" ]; then
@@ -110,6 +179,7 @@ case "$CMD" in
         ;;
     install-pki)
         parse_target "$@"
+        resolve_target
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
         if [ -n "$TARGET" ]; then
@@ -136,6 +206,7 @@ case "$CMD" in
         ;;
     ping)
         parse_target "$@"
+        resolve_target
         PING_TARGET="${TARGET:-all}"
         PING_INV=(-i "$APP_DIR/inventory")
         if [[ "$PING_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
