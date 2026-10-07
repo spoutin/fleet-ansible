@@ -10,6 +10,8 @@ if [ ! -d "$APP_DIR" ] && [ -d "./inventory" ]; then
     APP_DIR="$(pwd)"
 fi
 
+export ANSIBLE_CONFIG="$APP_DIR/ansible.cfg"
+
 # Load credentials from /etc/fleet/openbao.env if present
 if [ -f "$ENV_FILE" ]; then
     set -a
