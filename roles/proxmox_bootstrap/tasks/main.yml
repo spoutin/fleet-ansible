@@ -108,6 +108,7 @@
 
 - name: Ensure ansible user and SSH CA trust are configured on hypervisor itself
   ansible.builtin.shell: |
+    which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo)
     id -u ansible >/dev/null 2>&1 || useradd -m -s /bin/bash ansible
     mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
     mkdir -p /etc/ssh/sshd_config.d
