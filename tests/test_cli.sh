@@ -7,6 +7,8 @@ PYTHON_CMD="python3"
 # Extract helper functions from bin/fleet-ansible
 eval "$(sed -n '/^parse_target()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
 eval "$(sed -n '/^resolve_target()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
+eval "$(sed -n '/^cleanup()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
+eval "$(sed -n '/^setup_password_file()/,/^}/p' "$APP_DIR/bin/fleet-ansible")"
 
 test_target() {
     local expected_target="$1"
@@ -53,5 +55,27 @@ if [ "$TARGET" != "hypervisors" ]; then
     exit 1
 fi
 echo "PASS: resolve_target bypassed for hypervisors"
+
+# Test setup_password_file with ANSIBLE_SSH_PASSWORD
+export ANSIBLE_SSH_PASSWORD="test-vault-password"
+setup_password_file
+if [ -z "${ANSIBLE_CONNECTION_PASSWORD_FILE:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PASSWORD_FILE" ]; then
+    echo "FAIL: setup_password_file failed to create password file" >&2
+    exit 1
+fi
+content="$(cat "$ANSIBLE_CONNECTION_PASSWORD_FILE")"
+if [ "$content" != "test-vault-password" ]; then
+    echo "FAIL: Password file content mismatch: '$content'" >&2
+    exit 1
+fi
+echo "PASS: setup_password_file created file with correct password"
+
+# Test cleanup removes file
+cleanup
+if [ -f "$PASS_TMP_FILE" ]; then
+    echo "FAIL: cleanup failed to remove password file" >&2
+    exit 1
+fi
+echo "PASS: cleanup removed temporary password file"
 
 echo "All CLI argument and resolution tests passed successfully!"

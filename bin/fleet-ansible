@@ -157,6 +157,59 @@ for i, d in enumerate(data, 1):
     fi
 }
 
+PASS_TMP_FILE=""
+
+cleanup() {
+    if [ -n "${PASS_TMP_FILE:-}" ] && [ -f "$PASS_TMP_FILE" ]; then
+        rm -f "$PASS_TMP_FILE" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
+
+setup_password_file() {
+    # Don't set password file if user explicitly requested interactive password (-k)
+    for arg in "$@"; do
+        if [ "$arg" = "-k" ] || [ "$arg" = "--ask-pass" ]; then
+            return
+        fi
+    done
+    if [ -n "${ANSIBLE_CONNECTION_PASSWORD_FILE:-}" ]; then
+        return
+    fi
+
+    local pass="${ANSIBLE_SSH_PASSWORD:-}"
+    if [ -z "$pass" ]; then
+        pass="$(PYTHONPATH="$APP_DIR" "$PYTHON_CMD" -c '
+from inventory.orangutan import get_openbao_secrets
+sec = get_openbao_secrets()
+print(sec.get("ansible_ssh_password", ""))
+' 2>/dev/null || true)"
+    fi
+
+    if [ -n "$pass" ] && [ "$pass" != "CHANGE_ME" ]; then
+        local pass_dir="/tmp"
+        [ -d "/dev/shm" ] && pass_dir="/dev/shm"
+        PASS_TMP_FILE="$(mktemp "${pass_dir}/.fleet_pass.XXXXXX")"
+        chmod 600 "$PASS_TMP_FILE"
+        printf '%s' "$pass" > "$PASS_TMP_FILE"
+        export ANSIBLE_CONNECTION_PASSWORD_FILE="$PASS_TMP_FILE"
+    fi
+}
+
+run_ansible_playbook() {
+    "$ANSIBLE_PLAYBOOK" "$@"
+    local ret=$?
+    cleanup
+    exit $ret
+}
+
+run_ansible_cmd() {
+    "$ANSIBLE_CMD" "$@"
+    local ret=$?
+    cleanup
+    exit $ret
+}
+
 CMD="${1:-help}"
 shift || true
 
@@ -164,6 +217,7 @@ case "$CMD" in
     bootstrap)
         parse_target "$@"
         resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
         if [ -n "$TARGET" ]; then
@@ -175,11 +229,12 @@ case "$CMD" in
         else
             echo "==> Executing Hybrid Fleet Bootstrap across entire fleet..."
         fi
-        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/bootstrap.yml" "${EXTRA_ARGS[@]}"
+        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/bootstrap.yml" "${EXTRA_ARGS[@]}"
         ;;
     install-pki)
         parse_target "$@"
         resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
         if [ -n "$TARGET" ]; then
@@ -191,11 +246,11 @@ case "$CMD" in
         else
             echo "==> Installing SSH CA PKI Trust Across Managed Fleet..."
         fi
-        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${EXTRA_ARGS[@]}"
+        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${EXTRA_ARGS[@]}"
         ;;
     renew-cert)
         echo "==> Issuing Controller SSH Certificate via OpenBao..."
-        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/renew-controller-cert.yml" "$@"
+        run_ansible_playbook -i "$APP_DIR/inventory" "$APP_DIR/playbooks/renew-controller-cert.yml" "$@"
         ;;
     inventory)
         if command -v jq >/dev/null 2>&1; then
@@ -207,6 +262,7 @@ case "$CMD" in
     ping)
         parse_target "$@"
         resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
         PING_TARGET="${TARGET:-all}"
         PING_INV=(-i "$APP_DIR/inventory")
         if [[ "$PING_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -214,13 +270,14 @@ case "$CMD" in
         fi
         echo "==> Pinging hosts ($PING_TARGET)..."
         if [[ " ${EXTRA_ARGS[*]} " == *" -v"* ]]; then
-            exec "$ANSIBLE_CMD" "${PING_INV[@]}" "$PING_TARGET" -m ping "${EXTRA_ARGS[@]}"
+            run_ansible_cmd "${PING_INV[@]}" "$PING_TARGET" -m ping "${EXTRA_ARGS[@]}"
         else
-            exec "$ANSIBLE_CMD" "${PING_INV[@]}" "$PING_TARGET" -m ping -o "${EXTRA_ARGS[@]}" 2>/dev/null
+            run_ansible_cmd "${PING_INV[@]}" "$PING_TARGET" -m ping -o "${EXTRA_ARGS[@]}" 2>/dev/null
         fi
         ;;
     raw)
-        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$@"
+        setup_password_file "$@"
+        run_ansible_playbook -i "$APP_DIR/inventory" "$@"
         ;;
     help|--help|-h)
         show_help
