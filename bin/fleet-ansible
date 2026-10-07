@@ -48,7 +48,7 @@ Commands:
   site          Enforce SSH CA trust across all managed hosts (routine run)
   renew-cert    Generate controller key and request SSH certificate from OpenBao
   inventory     Query dynamic inventory from LAN-Orangutan (outputs JSON)
-  ping          Test SSH connectivity to all managed hosts via ansible ping
+  ping [target] Test SSH connectivity to target hosts or group (defaults to all)
   raw           Execute arbitrary ansible-playbook arguments directly
   help          Display this help message
 
@@ -85,8 +85,13 @@ case "$CMD" in
         fi
         ;;
     ping)
-        echo "==> Pinging managed hosts..."
-        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" managed_hosts -m ping "$@"
+        TARGET="all"
+        if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
+            TARGET="$1"
+            shift
+        fi
+        echo "==> Pinging $TARGET..."
+        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" "$TARGET" -m ping "$@"
         ;;
     raw)
         exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$@"
