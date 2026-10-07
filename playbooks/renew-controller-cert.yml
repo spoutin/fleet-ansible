@@ -58,7 +58,7 @@
         body_format: json
         body:
           public_key: "{{ pubkey_slurp.content | b64decode }}"
-          valid_principals: "ansible,operator,root"
+          valid_principals: "ansible,operator"
           ttl: "{{ cert_ttl }}"
         status_code: 200
         validate_certs: false

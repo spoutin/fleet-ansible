@@ -6,6 +6,8 @@
 - name: "Phase 1: Proxmox Host-Level Injection (Zero-SSH)"
   hosts: hypervisors
   gather_facts: false
+  vars:
+    ansible_user: "{{ bootstrap_hypervisor_user | default('root') }}"
   roles:
     - proxmox_bootstrap
   tags:
