@@ -17,6 +17,7 @@
 - name: "Phase 2: Network SSH Configuration (Managed Hosts & Fallback)"
   hosts: managed_hosts
   gather_facts: false
+  ignore_unreachable: true
   vars:
     openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://secrets.int.spoutin.org', true) }}"
     openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"

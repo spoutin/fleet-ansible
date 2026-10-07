@@ -87,6 +87,7 @@ case "$CMD" in
         ;;
     ping)
         echo "==> Pinging hosts..."
+        export ANSIBLE_STDOUT_CALLBACK=oneline
         exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping "$@"
         ;;
     raw)
