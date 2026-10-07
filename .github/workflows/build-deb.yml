@@ -30,8 +30,10 @@ jobs:
       - name: Install Ansible Core
         run: pip install ansible-core
 
-      - name: Validate Python Syntax
-        run: python3 -m py_compile inventory/orangutan.py
+      - name: Validate Python Syntax and Tests
+        run: |
+          python3 -m py_compile inventory/orangutan.py
+          python3 -m unittest discover tests/
 
       - name: Validate Playbook Syntax
         run: |
@@ -39,7 +41,7 @@ jobs:
           ansible-playbook --syntax-check playbooks/site.yml
           ansible-playbook --syntax-check playbooks/renew-controller-cert.yml
 
-      - name: Validate Shell Script Syntax
+      - name: Validate Shell Script Syntax and Tests
         run: |
           bash -n bin/fleet-ansible
           bash -n scripts/build-deb.sh
@@ -47,6 +49,7 @@ jobs:
           bash -n scripts/setup-openbao.sh
           bash -n packaging/deb/DEBIAN/postinst
           bash -n packaging/deb/DEBIAN/prerm
+          ./tests/test_cli.sh
 
   build-deb:
     name: Build .deb Package

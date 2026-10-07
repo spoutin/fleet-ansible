@@ -3,7 +3,7 @@
 # Enforces SSH CA trust and configuration idempotently across all managed hosts
 
 - name: Enforce SSH CA Trust Across Managed Fleet
-  hosts: managed_hosts
+  hosts: "managed_hosts:all:!hypervisors"
   gather_facts: false
   become: true
   roles:

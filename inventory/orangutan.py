@@ -190,7 +190,7 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
             dev.get("label")
             or dev.get("custom_hostname")
             or dev.get("hostname")
-            or f"host-{ip.replace('.', '-')}"
+            or ip
         )
         host_name = "".join(c if c.isalnum() or c in ".-_" else "_" for c in raw_name)
         if host_name in inventory["_meta"]["hostvars"]:
@@ -214,6 +214,13 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
         if os_group not in inventory:
             inventory[os_group] = {"hosts": []}
         inventory[os_group]["hosts"].append(host_name)
+
+        # Map IP address as a group alias so `--limit <ip>` targets this host
+        if ip not in inventory:
+            inventory[ip] = {"hosts": []}
+            inventory["all"]["children"].append(ip)
+        if host_name not in inventory[ip]["hosts"]:
+            inventory[ip]["hosts"].append(host_name)
 
         custom_group = dev.get("group")
         if custom_group:

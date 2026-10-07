@@ -41,25 +41,51 @@ show_help() {
 fleet-ansible - Spoutin Fleet Automation & SSH CA Trust Manager
 
 Usage:
-  fleet-ansible [command] [options]
+  fleet-ansible [command] [target] [options]
 
 Commands:
-  bootstrap     Run hybrid bootstrap (Phase 1 Proxmox push + Phase 2 SSH fallback)
-  site          Enforce SSH CA trust across all managed hosts (routine run)
-  renew-cert    Generate controller key and request SSH certificate from OpenBao
-  inventory     Query dynamic inventory from LAN-Orangutan (outputs JSON)
-  ping          Test SSH connectivity across inventory (supports --limit)
-  raw           Execute arbitrary ansible-playbook arguments directly
-  help          Display this help message
+  bootstrap [target]   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
+  site [target]        Enforce SSH CA trust for a target (IP, hostname, group, or whole fleet)
+  ping [target]        Test SSH connectivity (IP, hostname, group, or whole fleet)
+  renew-cert           Generate controller key and request SSH certificate from OpenBao
+  inventory            Query dynamic inventory from LAN-Orangutan (outputs JSON)
+  raw                  Execute arbitrary ansible-playbook arguments directly
+  help                 Display this help message
 
-Options:
-  Any extra options provided after a command are passed directly to Ansible.
-  Examples:
-    fleet-ansible bootstrap --limit hypervisors -k
-    fleet-ansible ping --limit hypervisors
-    fleet-ansible site --limit debian
-    fleet-ansible raw playbooks/site.yml -vvv
+Targeting:
+  IP, Hostname, and Group can be used interchangeably directly or with --limit:
+    fleet-ansible bootstrap 10.0.0.82 -k
+    fleet-ansible bootstrap truenas
+    fleet-ansible site debian
+    fleet-ansible ping 10.0.0.41
+    fleet-ansible ping hypervisors
+    fleet-ansible bootstrap --limit hypervisors
 EOF
+}
+
+parse_target() {
+    TARGET=""
+    EXTRA_ARGS=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --limit|-l)
+                TARGET="$2"
+                shift 2
+                ;;
+            -*)
+                EXTRA_ARGS+=("$1")
+                shift
+                ;;
+            *)
+                if [ -z "$TARGET" ]; then
+                    TARGET="$1"
+                else
+                    EXTRA_ARGS+=("$1")
+                fi
+                shift
+                ;;
+        esac
+    done
 }
 
 CMD="${1:-help}"
@@ -67,12 +93,34 @@ shift || true
 
 case "$CMD" in
     bootstrap)
-        echo "==> Executing Hybrid Fleet Bootstrap..."
-        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/bootstrap.yml" "$@"
+        parse_target "$@"
+        INV_ARGS=(-i "$APP_DIR/inventory")
+        LIMIT_ARGS=()
+        if [ -n "$TARGET" ]; then
+            if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                INV_ARGS+=(-i "$TARGET,")
+            fi
+            LIMIT_ARGS=(--limit "$TARGET")
+            echo "==> Executing Hybrid Fleet Bootstrap for [$TARGET]..."
+        else
+            echo "==> Executing Hybrid Fleet Bootstrap across entire fleet..."
+        fi
+        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/bootstrap.yml" "${EXTRA_ARGS[@]}"
         ;;
     site)
-        echo "==> Enforcing SSH CA Trust Across Managed Fleet..."
-        exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$APP_DIR/playbooks/site.yml" "$@"
+        parse_target "$@"
+        INV_ARGS=(-i "$APP_DIR/inventory")
+        LIMIT_ARGS=()
+        if [ -n "$TARGET" ]; then
+            if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                INV_ARGS+=(-i "$TARGET,")
+            fi
+            LIMIT_ARGS=(--limit "$TARGET")
+            echo "==> Enforcing SSH CA Trust for [$TARGET]..."
+        else
+            echo "==> Enforcing SSH CA Trust Across Managed Fleet..."
+        fi
+        exec "$ANSIBLE_PLAYBOOK" "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/site.yml" "${EXTRA_ARGS[@]}"
         ;;
     renew-cert)
         echo "==> Issuing Controller SSH Certificate via OpenBao..."
@@ -86,11 +134,17 @@ case "$CMD" in
         fi
         ;;
     ping)
-        echo "==> Pinging hosts..."
-        if [[ "$*" == *"-v"* ]]; then
-            exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping "$@"
+        parse_target "$@"
+        PING_TARGET="${TARGET:-all}"
+        PING_INV=(-i "$APP_DIR/inventory")
+        if [[ "$PING_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            PING_INV+=(-i "$PING_TARGET,")
+        fi
+        echo "==> Pinging hosts ($PING_TARGET)..."
+        if [[ " ${EXTRA_ARGS[*]} " == *" -v"* ]]; then
+            exec "$ANSIBLE_CMD" "${PING_INV[@]}" "$PING_TARGET" -m ping "${EXTRA_ARGS[@]}"
         else
-            exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping -o "$@" 2>/dev/null
+            exec "$ANSIBLE_CMD" "${PING_INV[@]}" "$PING_TARGET" -m ping -o "${EXTRA_ARGS[@]}" 2>/dev/null
         fi
         ;;
     raw)

@@ -13,3 +13,9 @@ all:
           ansible_host: 10.0.0.42   # pve2.int.spoutin.org
       vars:
         ansible_python_interpreter: /usr/bin/python3
+    "10.0.0.41":
+      hosts:
+        pve1:
+    "10.0.0.42":
+      hosts:
+        pve2:

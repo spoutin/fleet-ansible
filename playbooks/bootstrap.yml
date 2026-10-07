@@ -14,7 +14,7 @@
     - bootstrap
 
 - name: "Phase 2: Network SSH Configuration (Managed Hosts & Fallback)"
-  hosts: managed_hosts
+  hosts: "managed_hosts:all:!hypervisors"
   gather_facts: false
   ignore_unreachable: true
   become: true
