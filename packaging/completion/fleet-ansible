@@ -1,0 +1,77 @@
+# Bash completion for fleet-ansible
+# Installed to /etc/bash_completion.d/fleet-ansible
+
+_fleet_ansible_complete() {
+    local cur prev words cword
+    if declare -F _init_completion >/dev/null 2>&1; then
+        _init_completion || return
+    else
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+        words=("${COMP_WORDS[@]}")
+        cword=$COMP_CWORD
+    fi
+
+    local commands="bootstrap install-pki ping renew-cert show-key public-key inventory raw help"
+    local options="-k --ask-pass -v -vvv -l --limit -h --help"
+
+    # Completing the primary command
+    if [ "$cword" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+        return 0
+    fi
+
+    local cmd="${words[1]}"
+
+    # Helper function to get completion targets
+    _get_targets() {
+        local py="/opt/fleet-ansible/.venv/bin/python3"
+        [ ! -x "$py" ] && py="python3"
+
+        if [ -f "/opt/fleet-ansible/inventory/orangutan.py" ]; then
+            "$py" /opt/fleet-ansible/inventory/orangutan.py --complete 2>/dev/null || echo "hypervisors managed_hosts debian ubuntu alpine redhat proxmox pve1 pve2 all"
+        elif [ -f "./inventory/orangutan.py" ]; then
+            "$py" ./inventory/orangutan.py --complete 2>/dev/null || echo "hypervisors managed_hosts debian ubuntu alpine redhat proxmox pve1 pve2 all"
+        else
+            echo "hypervisors managed_hosts debian ubuntu alpine redhat proxmox pve1 pve2 all"
+        fi
+    }
+
+    case "$prev" in
+        --limit|-l)
+            local targets
+            targets="$(_get_targets)"
+            COMPREPLY=( $(compgen -W "$targets" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    case "$cmd" in
+        bootstrap|install-pki|ping)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "$options" -- "$cur") )
+            else
+                local targets
+                targets="$(_get_targets)"
+                COMPREPLY=( $(compgen -W "$targets $options" -- "$cur") )
+            fi
+            return 0
+            ;;
+        raw)
+            # Default file completion for raw playbooks
+            if declare -F _filedir >/dev/null 2>&1; then
+                _filedir
+            fi
+            return 0
+            ;;
+        *)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "$options" -- "$cur") )
+            fi
+            return 0
+            ;;
+    esac
+}
+
+complete -F _fleet_ansible_complete fleet-ansible

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Script to assemble fleet-ansible Debian (.deb) package
-VERSION="${1:-0.4.3}"
+VERSION="${1:-0.4.4}"
 ARCH="${2:-amd64}"
 
 # Strip leading 'v' from version if present
@@ -53,7 +53,12 @@ cp "${REPO_ROOT}/config/openbao.env.example" "${STAGING_DIR}/etc/fleet/"
 # 5. Stage systemd units
 cp "${REPO_ROOT}/packaging/systemd/"* "${STAGING_DIR}/lib/systemd/system/"
 
-# 6. Build .deb package
+# 6. Stage bash completion
+mkdir -p "${STAGING_DIR}/etc/bash_completion.d"
+cp "${REPO_ROOT}/packaging/completion/fleet-ansible" "${STAGING_DIR}/etc/bash_completion.d/fleet-ansible"
+chmod 644 "${STAGING_DIR}/etc/bash_completion.d/fleet-ansible"
+
+# 7. Build .deb package
 OUTPUT_DEB="${DIST_DIR}/fleet-ansible_${VERSION}_${ARCH}.deb"
 
 if command -v dpkg-deb >/dev/null 2>&1; then

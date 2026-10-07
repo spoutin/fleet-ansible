@@ -6,7 +6,11 @@ import os
 # Add parent directory to path so inventory can be imported
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from inventory.orangutan import build_inventory, find_devices_by_target
+from inventory.orangutan import (
+    build_inventory,
+    find_devices_by_target,
+    get_completion_targets,
+)
 
 
 class TestInventoryIPMapping(unittest.TestCase):
@@ -77,6 +81,29 @@ class TestInventoryIPMapping(unittest.TestCase):
 
         # Zero matches
         self.assertEqual(len(find_devices_by_target("nonexistent")), 0)
+
+    @patch("inventory.orangutan.get_openbao_secrets")
+    @patch("inventory.orangutan.fetch_orangutan_devices")
+    def test_get_completion_targets(self, mock_fetch, mock_secrets):
+        mock_secrets.return_value = {}
+        mock_fetch.return_value = {
+            "10.0.0.82": {
+                "ansible_managed": True,
+                "hostname": "truenas.int.spoutin.org",
+                "vendor": "Debian",
+            },
+        }
+
+        # Clear cache file if present
+        if os.path.exists("/tmp/.fleet_targets_cache"):
+            os.remove("/tmp/.fleet_targets_cache")
+
+        targets = get_completion_targets()
+        self.assertIn("hypervisors", targets)
+        self.assertIn("managed_hosts", targets)
+        self.assertIn("debian", targets)
+        self.assertIn("truenas.int.spoutin.org", targets)
+        self.assertIn("10.0.0.82", targets)
 
     @patch("inventory.orangutan.get_openbao_secrets")
     @patch("inventory.orangutan.fetch_orangutan_devices")

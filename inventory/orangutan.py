@@ -217,6 +217,57 @@ def find_devices_by_target(query: str, only_managed: bool = True) -> list:
     return matches
 
 
+def get_completion_targets() -> list:
+    """Return list of all completion targets (groups, hostnames, IPs) with fast cache."""
+    targets = {
+        "hypervisors", "managed_hosts", "debian", "ubuntu",
+        "alpine", "redhat", "proxmox", "pve1", "pve2", "all"
+    }
+
+    cache_file = "/tmp/.fleet_targets_cache"
+    try:
+        if os.path.exists(cache_file):
+            import time
+            mtime = os.path.getmtime(cache_file)
+            if time.time() - mtime < 60:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached = f.read().split()
+                    if cached:
+                        return cached
+    except Exception:
+        pass
+
+    try:
+        bao_secrets = get_openbao_secrets()
+        orangutan_url = (
+            os.getenv("ORANGUTAN_URL")
+            or bao_secrets.get("orangutan_url")
+            or "http://10.0.0.1:291"
+        ).rstrip("/")
+        orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get("orangutan_password")
+        devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
+        for ip, dev in devices.items():
+            targets.add(ip)
+            base_name = get_device_base_name(ip, dev)
+            if base_name:
+                targets.add(base_name)
+            for k in ("hostname", "custom_hostname", "label", "group"):
+                v = dev.get(k)
+                if v:
+                    targets.add("".join(c if c.isalnum() or c in ".-_" else "_" for c in v))
+    except Exception:
+        pass
+
+    target_list = sorted(targets)
+    try:
+        with open(cache_file, "w", encoding="utf-8") as f:
+            f.write(" ".join(target_list))
+    except Exception:
+        pass
+
+    return target_list
+
+
 def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
     """Construct Ansible inventory JSON."""
     inventory: Dict[str, Any] = {
@@ -322,13 +373,20 @@ def main():
         help="Find devices matching a query (by IP, hostname, or label) for disambiguation",
     )
     parser.add_argument(
+        "--complete",
+        action="store_true",
+        help="List all completion targets (groups, hostnames, IPs)",
+    )
+    parser.add_argument(
         "--all-hosts",
         action="store_true",
         help="Include all online devices, ignoring ansible_managed flag",
     )
     args = parser.parse_args()
 
-    if args.find:
+    if args.complete:
+        print(" ".join(get_completion_targets()))
+    elif args.find:
         matches = find_devices_by_target(args.find, only_managed=not args.all_hosts)
         print(json.dumps(matches, indent=2))
     elif args.host:

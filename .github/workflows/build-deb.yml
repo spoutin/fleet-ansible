@@ -49,6 +49,7 @@ jobs:
           bash -n scripts/setup-openbao.sh
           bash -n packaging/deb/DEBIAN/postinst
           bash -n packaging/deb/DEBIAN/prerm
+          bash -n packaging/completion/fleet-ansible
           ./tests/test_cli.sh
 
   build-deb:

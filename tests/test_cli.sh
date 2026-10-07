@@ -78,4 +78,25 @@ if [ -f "$PASS_TMP_FILE" ]; then
 fi
 echo "PASS: cleanup removed temporary password file"
 
+# Test bash completion script
+source "$APP_DIR/packaging/completion/fleet-ansible"
+
+COMP_WORDS=("fleet-ansible" "in")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"install-pki"* ]]; then
+    echo "FAIL: Bash completion failed to complete install-pki: '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Bash completion completed 'install-pki'"
+
+COMP_WORDS=("fleet-ansible" "ping" "hyp")
+COMP_CWORD=2
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"hypervisors"* ]]; then
+    echo "FAIL: Bash completion failed to complete target 'hypervisors': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Bash completion completed 'hypervisors'"
+
 echo "All CLI argument and resolution tests passed successfully!"
