@@ -40,6 +40,15 @@
 - name: Inject SSH CA into running LXC containers
   loop: "{{ running_lxcs }}"
   ansible.builtin.shell: |
+    # Ensure sudo is installed
+    pct exec {{ item }} -- sh -c 'which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo || apk add sudo || dnf install -y sudo || yum install -y sudo || true)'
+
+    # Create ansible user if missing
+    pct exec {{ item }} -- sh -c 'id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || adduser -D -s /bin/sh ansible 2>/dev/null || true)'
+
+    # Configure passwordless sudo for ansible user
+    pct exec {{ item }} -- sh -c 'mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible'
+
     # Ensure /etc/ssh and drop-in dir exist inside the LXC
     pct exec {{ item }} -- mkdir -p /etc/ssh/sshd_config.d
     
@@ -76,7 +85,10 @@
       CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
       CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
       
-      qm guest exec {{ item }} -- /bin/sh -c "mkdir -p /etc/ssh/sshd_config.d && \
+      qm guest exec {{ item }} -- /bin/sh -c "which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo || dnf install -y sudo || true); \
+        id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || true); \
+        mkdir -p /etc/sudoers.d && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible; \
+        mkdir -p /etc/ssh/sshd_config.d && \
         echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && \
         chmod 644 /etc/ssh/trusted-user-ca-keys.pub && \
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
@@ -89,6 +101,16 @@
   register: qm_bootstrap_result
   changed_when: "'Guest agent not available' not in qm_bootstrap_result.stdout"
   ignore_errors: true
+
+- name: Ensure ansible user and SSH CA trust are configured on hypervisor itself
+  ansible.builtin.shell: |
+    id -u ansible >/dev/null 2>&1 || useradd -m -s /bin/bash ansible
+    mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+    mkdir -p /etc/ssh/sshd_config.d
+    cp /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+    cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+    grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
+    /usr/sbin/sshd -t && systemctl reload ssh
 
 - name: Remove temporary hypervisor staging files
   ansible.builtin.file:

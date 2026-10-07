@@ -4,7 +4,7 @@
 # URL from which the SSH CA public key is downloaded
 # Uses the unauthenticated endpoint exposed by Spoutin PKI or OpenBao natively
 ssh_ca_public_key_url: "https://pki.int.spoutin.org/ssh-ca.pub"
-ssh_ca_fallback_url: "http://10.0.0.29:8200/v1/ssh/public_key"
+ssh_ca_fallback_url: "https://secrets.int.spoutin.org/v1/ssh/public_key"
 
 # Path where the trusted CA key is installed on client hosts
 ssh_ca_keys_path: "/etc/ssh/trusted-user-ca-keys.pub"

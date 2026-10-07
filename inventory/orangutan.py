@@ -55,7 +55,7 @@ def get_openbao_secrets() -> Dict[str, Any]:
     bao_url = (
         os.getenv("OPENBAO_URL")
         or file_env.get("OPENBAO_URL")
-        or "https://10.0.0.29:8200"
+        or "https://secrets.int.spoutin.org"
     ).rstrip("/")
     role_id = os.getenv("OPENBAO_ROLE_ID") or file_env.get("OPENBAO_ROLE_ID") or "92ac0442-cc8b-779b-bee1-58b45fb66ddc"
     secret_id = os.getenv("OPENBAO_SECRET_ID") or file_env.get("OPENBAO_SECRET_ID")

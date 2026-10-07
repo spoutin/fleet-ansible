@@ -16,7 +16,7 @@
   hosts: managed_hosts
   gather_facts: false
   vars:
-    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://10.0.0.29:8200', true) }}"
+    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://secrets.int.spoutin.org', true) }}"
     openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"
     openbao_secret_id: "{{ lookup('env', 'OPENBAO_SECRET_ID') }}"
   pre_tasks:

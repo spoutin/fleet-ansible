@@ -2,7 +2,7 @@
 # Helper script to set up OpenBao AppRole and fleet secrets for fleet-ansible
 set -euo pipefail
 
-OPENBAO_ADDR="${OPENBAO_ADDR:-http://10.0.0.29:8200}"
+OPENBAO_ADDR="${OPENBAO_ADDR:-https://secrets.int.spoutin.org}"
 
 echo "Configuring OpenBao for fleet-ansible on $OPENBAO_ADDR..."
 

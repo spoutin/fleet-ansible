@@ -10,7 +10,7 @@
   vars:
     controller_key_path: "{{ lookup('env', 'HOME') }}/.ssh/ansible_controller"
     controller_cert_path: "{{ lookup('env', 'HOME') }}/.ssh/ansible_controller-cert.pub"
-    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://10.0.0.29:8200', true) }}"
+    openbao_url: "{{ lookup('env', 'OPENBAO_URL') | default('https://secrets.int.spoutin.org', true) }}"
     openbao_role_id: "{{ lookup('env', 'OPENBAO_ROLE_ID') | default('92ac0442-cc8b-779b-bee1-58b45fb66ddc', true) }}"
     openbao_secret_id: "{{ lookup('env', 'OPENBAO_SECRET_ID') }}"
     cert_ttl: "8760h"  # 1 year
@@ -58,7 +58,7 @@
         body_format: json
         body:
           public_key: "{{ pubkey_slurp.content | b64decode }}"
-          valid_principals: "operator,root"
+          valid_principals: "ansible,operator,root"
           ttl: "{{ cert_ttl }}"
         status_code: 200
         validate_certs: false
@@ -78,6 +78,7 @@
         marker: "# {mark} ANSIBLE CONTROLLER CERTIFICATE CONFIG"
         block: |
           Host 10.0.*
+            User ansible
             IdentityFile {{ controller_key_path }}
             CertificateFile {{ controller_cert_path }}
             IdentitiesOnly yes

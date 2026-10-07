@@ -104,7 +104,7 @@ bash scripts/setup-lxc.sh
 ### 2. Configure OpenBao Credentials on the LXC
 Edit `/etc/fleet/openbao.env`:
 ```ini
-OPENBAO_URL=http://10.0.0.29:8200
+OPENBAO_URL=https://secrets.int.spoutin.org
 OPENBAO_ROLE_ID=92ac0442-cc8b-779b-bee1-58b45fb66ddc
 OPENBAO_SECRET_ID=<your-secret-id>
 ```
