@@ -48,14 +48,15 @@ Commands:
   site          Enforce SSH CA trust across all managed hosts (routine run)
   renew-cert    Generate controller key and request SSH certificate from OpenBao
   inventory     Query dynamic inventory from LAN-Orangutan (outputs JSON)
-  ping [target] Test SSH connectivity to target hosts or group (defaults to all)
+  ping          Test SSH connectivity across inventory (supports --limit)
   raw           Execute arbitrary ansible-playbook arguments directly
   help          Display this help message
 
 Options:
   Any extra options provided after a command are passed directly to Ansible.
   Examples:
-    fleet-ansible bootstrap --check
+    fleet-ansible bootstrap --limit hypervisors -k
+    fleet-ansible ping --limit hypervisors
     fleet-ansible site --limit debian
     fleet-ansible raw playbooks/site.yml -vvv
 EOF
@@ -85,13 +86,8 @@ case "$CMD" in
         fi
         ;;
     ping)
-        TARGET="all"
-        if [ $# -gt 0 ] && [[ "$1" != -* ]]; then
-            TARGET="$1"
-            shift
-        fi
-        echo "==> Pinging $TARGET..."
-        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" "$TARGET" -m ping "$@"
+        echo "==> Pinging hosts..."
+        exec "$ANSIBLE_CMD" -i "$APP_DIR/inventory" all -m ping "$@"
         ;;
     raw)
         exec "$ANSIBLE_PLAYBOOK" -i "$APP_DIR/inventory" "$@"
