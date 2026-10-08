@@ -87,15 +87,19 @@ ${C_BOLD}${C_YELLOW}Onboarding a New Device:${C_RESET}
      ${C_DIM}Zero-SSH push directly via the hypervisors (no guest credentials needed):${C_RESET}
        ${C_CYAN}fleet-ansible bootstrap hypervisors${C_RESET}
 
-  ${C_BOLD}2. Standalone / Bare Metal with Password Auth:${C_RESET}
-     ${C_DIM}Ensure 'ansible ALL=(ALL) NOPASSWD:ALL' in /etc/sudoers.d/ansible, then run:${C_RESET}
-       ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
-       ${C_DIM}(pass -k if using a custom password not stored in OpenBao)${C_RESET}
+  ${C_BOLD}2. Standalone / Bare Metal Prerequisite:${C_RESET}
+     ${C_DIM}Create 'ansible' user and configure passwordless sudo:${C_RESET}
+       ${C_CYAN}echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible${C_RESET}
+       ${C_DIM}(or check "Allow all sudo commands without password" in TrueNAS user settings)${C_RESET}
 
-  ${C_BOLD}3. Standalone with Key-Only Auth (e.g., TrueNAS):${C_RESET}
-     ${C_DIM}Ensure 'ansible' has passwordless sudo, run 'fleet-ansible show-key',${C_RESET}
-     ${C_DIM}paste public key into authorized_keys (or TrueNAS user settings), then:${C_RESET}
-       ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
+  ${C_BOLD}3. Authenticate & Install PKI Trust:${C_RESET}
+     ${C_BOLD}a) With Password Auth:${C_RESET}
+        ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
+        ${C_DIM}(pass -k if using a custom password not stored in OpenBao)${C_RESET}
+
+     ${C_BOLD}b) With Key-Only Auth (e.g., TrueNAS):${C_RESET}
+        ${C_DIM}Run 'fleet-ansible show-key' and paste public key into authorized_keys, then:${C_RESET}
+        ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
 EOF
 }
 

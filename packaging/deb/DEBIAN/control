@@ -1,5 +1,5 @@
 Package: fleet-ansible
-Version: 0.5.3
+Version: 0.5.4
 Section: admin
 Priority: optional
 Architecture: amd64
