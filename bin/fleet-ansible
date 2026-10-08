@@ -36,44 +36,65 @@ else
     PYTHON_CMD="python3"
 fi
 
+# Colors for interactive terminal output
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ] && [ -z "${NO_COLOR:-}" ]; then
+    C_RESET=$(printf '\033[0m')
+    C_BOLD=$(printf '\033[1m')
+    C_DIM=$(printf '\033[2m')
+    C_CYAN=$(printf '\033[0;36m')
+    C_GREEN=$(printf '\033[0;32m')
+    C_YELLOW=$(printf '\033[0;33m')
+    C_BLUE=$(printf '\033[0;34m')
+    C_RED=$(printf '\033[0;31m')
+else
+    C_RESET=""
+    C_BOLD=""
+    C_DIM=""
+    C_CYAN=""
+    C_GREEN=""
+    C_YELLOW=""
+    C_BLUE=""
+    C_RED=""
+fi
+
 show_help() {
     cat << EOF
-fleet-ansible - Spoutin Fleet Automation & SSH CA Trust Manager
+${C_BOLD}${C_CYAN}fleet-ansible${C_RESET} - ${C_DIM}Spoutin Fleet Automation & SSH CA Trust Manager${C_RESET}
 
-Usage:
+${C_BOLD}${C_YELLOW}Usage:${C_RESET}
   fleet-ansible [command] [target] [options]
 
-Commands:
-  bootstrap [target]   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
-  install-pki [target] Install and configure SSH CA trust on target (or whole fleet)
-  ping [target]        Test SSH connectivity (IP, hostname, group, or whole fleet)
-  enroll               Enroll controller key with OpenBao CA & configure SSH certificate
-  show-key             Display controller public key (to paste into TrueNAS/cloud-init)
-  completion [bash]    Output shell tab-completion code (add to ~/.bashrc)
-  inventory            Query dynamic inventory from LAN-Orangutan (outputs JSON)
-  raw                  Execute arbitrary ansible-playbook arguments directly
-  help                 Display this help message
+${C_BOLD}${C_YELLOW}Commands:${C_RESET}
+  ${C_BOLD}${C_GREEN}bootstrap${C_RESET} ${C_DIM}[target]${C_RESET}   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
+  ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet)
+  ${C_BOLD}${C_GREEN}ping${C_RESET} ${C_DIM}[target]${C_RESET}        Test SSH connectivity (IP, hostname, group, or whole fleet)
+  ${C_BOLD}${C_GREEN}enroll${C_RESET}               Enroll controller key with OpenBao CA & configure SSH certificate
+  ${C_BOLD}${C_GREEN}show-key${C_RESET}             Display controller public key (to paste into TrueNAS/cloud-init)
+  ${C_BOLD}${C_GREEN}completion${C_RESET} ${C_DIM}[bash]${C_RESET}    Output shell tab-completion code (add to ~/.bashrc)
+  ${C_BOLD}${C_GREEN}inventory${C_RESET}            Query dynamic inventory from LAN-Orangutan (outputs JSON)
+  ${C_BOLD}${C_GREEN}raw${C_RESET}                  Execute arbitrary ansible-playbook arguments directly
+  ${C_BOLD}${C_GREEN}help${C_RESET}                 Display this help message
 
-Targeting:
+${C_BOLD}${C_YELLOW}Targeting:${C_RESET}
   IP, Hostname, and Group can be used interchangeably directly or with --limit:
-    fleet-ansible ping 10.0.0.82
-    fleet-ansible ping truenas
-    fleet-ansible ping debian
-    fleet-ansible ping hypervisors
+    ${C_CYAN}fleet-ansible ping 10.0.0.82${C_RESET}
+    ${C_CYAN}fleet-ansible ping truenas${C_RESET}
+    ${C_CYAN}fleet-ansible ping debian${C_RESET}
+    ${C_CYAN}fleet-ansible ping hypervisors${C_RESET}
 
-Onboarding a New Device:
-  1. Proxmox Guests (LXC / VM):
-     Zero-SSH push directly via the hypervisors (no guest credentials needed):
-       fleet-ansible bootstrap hypervisors
+${C_BOLD}${C_YELLOW}Onboarding a New Device:${C_RESET}
+  ${C_BOLD}1. Proxmox Guests (LXC / VM):${C_RESET}
+     ${C_DIM}Zero-SSH push directly via the hypervisors (no guest credentials needed):${C_RESET}
+       ${C_CYAN}fleet-ansible bootstrap hypervisors${C_RESET}
 
-  2. Standalone / Bare Metal with Password Auth:
-     Ensure /etc/sudoers.d/ansible has "ansible ALL=(ALL) NOPASSWD:ALL", then run:
-       fleet-ansible install-pki <ip_or_hostname>
-       (pass -k if using a custom password not stored in OpenBao)
+  ${C_BOLD}2. Standalone / Bare Metal with Password Auth:${C_RESET}
+     ${C_DIM}Ensure /etc/sudoers.d/ansible has "ansible ALL=(ALL) NOPASSWD:ALL", then run:${C_RESET}
+       ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
+       ${C_DIM}(pass -k if using a custom password not stored in OpenBao)${C_RESET}
 
-  3. Standalone with Key-Only Auth (e.g., TrueNAS):
-     Run 'fleet-ansible show-key', paste public key into the user's authorized_keys, then:
-       fleet-ansible install-pki <ip_or_hostname>
+  ${C_BOLD}3. Standalone with Key-Only Auth (e.g., TrueNAS):${C_RESET}
+     ${C_DIM}Run 'fleet-ansible show-key', paste public key into the user's authorized_keys, then:${C_RESET}
+       ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
 EOF
 }
 
@@ -123,7 +144,7 @@ resolve_target() {
     if [ "$count" -gt 1 ]; then
         if [ -t 0 ]; then
             echo ""
-            echo "Multiple hosts found matching '$TARGET':"
+            echo "${C_BOLD}${C_YELLOW}Multiple hosts found matching '$TARGET':${C_RESET}"
             "$PYTHON_CMD" -c '
 import json, sys
 data = json.loads(sys.argv[1])
@@ -148,14 +169,14 @@ for i, d in enumerate(data, 1):
                         exit 0
                         ;;
                     "$all_idx"|[aA]|all|ALL)
-                        echo "==> Selected: All matching hosts ($TARGET)"
+                        echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Selected: All matching hosts ($TARGET)${C_RESET}"
                         break
                         ;;
                     *)
                         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
                             local selected_ip
                             selected_ip="$("$PYTHON_CMD" -c "import json, sys; data=json.loads(sys.argv[1]); print(data[int(sys.argv[2])-1]['ip'])" "$find_output" "$choice")"
-                            echo "==> Selected: $selected_ip"
+                            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Selected:${C_RESET} ${C_CYAN}$selected_ip${C_RESET}"
                             TARGET="$selected_ip"
                             break
                         else
@@ -165,7 +186,7 @@ for i, d in enumerate(data, 1):
                 esac
             done
         else
-            echo "Notice: Multiple hosts found matching '$TARGET', targeting all matches non-interactively."
+            echo "${C_DIM}Notice: Multiple hosts found matching '$TARGET', targeting all matches non-interactively.${C_RESET}"
         fi
     fi
 }
@@ -238,9 +259,9 @@ case "$CMD" in
                 INV_ARGS+=(-i "$TARGET,")
             fi
             LIMIT_ARGS=(--limit "$TARGET")
-            echo "==> Executing Hybrid Fleet Bootstrap for [$TARGET]..."
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Executing Hybrid Fleet Bootstrap for [${C_CYAN}$TARGET${C_RESET}${C_BOLD}]...${C_RESET}"
         else
-            echo "==> Executing Hybrid Fleet Bootstrap across entire fleet..."
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Executing Hybrid Fleet Bootstrap across entire fleet...${C_RESET}"
         fi
         run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/bootstrap.yml" "${EXTRA_ARGS[@]}"
         ;;
@@ -255,14 +276,14 @@ case "$CMD" in
                 INV_ARGS+=(-i "$TARGET,")
             fi
             LIMIT_ARGS=(--limit "$TARGET")
-            echo "==> Installing SSH CA PKI Trust for [$TARGET]..."
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Installing SSH CA PKI Trust for [${C_CYAN}$TARGET${C_RESET}${C_BOLD}]...${C_RESET}"
         else
-            echo "==> Installing SSH CA PKI Trust Across Managed Fleet..."
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Installing SSH CA PKI Trust Across Managed Fleet...${C_RESET}"
         fi
         run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${EXTRA_ARGS[@]}"
         ;;
     enroll|renew-cert)
-        echo "==> Enrolling Ansible Controller & Issuing SSH Certificate via OpenBao..."
+        echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Enrolling Ansible Controller & Issuing SSH Certificate via OpenBao...${C_RESET}"
         run_ansible_playbook -i "$APP_DIR/inventory" "$APP_DIR/playbooks/enroll.yml" "$@"
         ;;
     completion)
@@ -357,7 +378,7 @@ COMPLETION_EOF
         if [[ "$PING_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             PING_INV+=(-i "$PING_TARGET,")
         fi
-        echo "==> Pinging hosts ($PING_TARGET)..."
+        echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Pinging hosts (${C_CYAN}$PING_TARGET${C_RESET}${C_BOLD})...${C_RESET}"
         if [[ " ${EXTRA_ARGS[*]} " == *" -v"* ]]; then
             run_ansible_cmd "${PING_INV[@]}" "$PING_TARGET" -m ping "${EXTRA_ARGS[@]}"
         else
@@ -370,14 +391,14 @@ COMPLETION_EOF
             PUB_KEY="/root/.ssh/ansible_controller.pub"
         fi
         if [ -f "$PUB_KEY" ]; then
-            echo "==> Ansible Controller Public Key ($PUB_KEY):"
+            echo "${C_BOLD}${C_GREEN}==>${C_RESET} ${C_BOLD}Ansible Controller Public Key (${C_CYAN}$PUB_KEY${C_RESET}${C_BOLD}):${C_RESET}"
             echo ""
             cat "$PUB_KEY"
             echo ""
-            echo "Tip: Paste this key into /home/ansible/.ssh/authorized_keys (or TrueNAS / cloud-init)"
-            echo "on servers where password authentication is disabled."
+            echo "${C_DIM}Tip: Paste this key into /home/ansible/.ssh/authorized_keys (or TrueNAS / cloud-init)"
+            echo "on servers where password authentication is disabled.${C_RESET}"
         else
-            echo "Notice: Controller key not found at $PUB_KEY" >&2
+            echo "${C_YELLOW}Notice: Controller key not found at $PUB_KEY${C_RESET}" >&2
             echo "Run 'fleet-ansible enroll' first to generate and enroll the key." >&2
             exit 1
         fi
@@ -391,7 +412,7 @@ COMPLETION_EOF
         exit 0
         ;;
     *)
-        echo "Error: Unknown command '$CMD'" >&2
+        echo "${C_BOLD}${C_RED}Error:${C_RESET} Unknown command '$CMD'" >&2
         echo "" >&2
         show_help >&2
         exit 1
