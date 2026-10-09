@@ -174,21 +174,3 @@
         state: present
         validate: '/usr/sbin/sshd -t -f %s'
       notify: reload sshd
-
-- name: Remove legacy client-side KRL sync timer if present
-  ansible.builtin.systemd:
-    name: fleet-ssh-krl-sync.timer
-    enabled: false
-    state: stopped
-  ignore_errors: true
-
-- name: Remove legacy client-side KRL sync unit files
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /etc/systemd/system/fleet-ssh-krl-sync.timer
-    - /etc/systemd/system/fleet-ssh-krl-sync.service
-    - /tmp/krl.etag
-    - /etc/ssh/revoked-keys.krl.incoming
-  ignore_errors: true
