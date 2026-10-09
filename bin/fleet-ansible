@@ -57,7 +57,24 @@ else
     C_RED=""
 fi
 
+get_controller_pubkey() {
+    local key="<public-key>"
+    for p in "${HOME}/.ssh/ansible_controller.pub" "/root/.ssh/ansible_controller.pub"; do
+        if [ -f "$p" ]; then
+            local rk
+            rk="$(cat "$p" 2>/dev/null | tr -d '\r\n' || true)"
+            if [ -n "$rk" ]; then
+                key="$rk"
+                break
+            fi
+        fi
+    done
+    printf '%s' "$key"
+}
+
 show_help() {
+    local target_pubkey
+    target_pubkey="$(get_controller_pubkey)"
     cat << EOF
 ${C_BOLD}${C_CYAN}fleet-ansible${C_RESET} - ${C_DIM}Spoutin Fleet Automation & SSH CA Trust Manager${C_RESET}
 
@@ -98,8 +115,13 @@ ${C_BOLD}${C_YELLOW}Onboarding a New Device:${C_RESET}
         ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
         ${C_DIM}(pass -k if using a custom password not stored in OpenBao)${C_RESET}
 
-     ${C_BOLD}b) With Key-Only Auth (e.g., TrueNAS):${C_RESET}
-        ${C_DIM}Run 'fleet-ansible show-key' and paste public key into authorized_keys, then:${C_RESET}
+     ${C_BOLD}b) With Key-Only Auth (e.g., TrueNAS / hardened Linux):${C_RESET}
+        ${C_DIM}Run this on the target host to authorize the controller key:${C_RESET}
+        ${C_CYAN}mkdir -p /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && \\
+touch /home/ansible/.ssh/authorized_keys && chmod 600 /home/ansible/.ssh/authorized_keys && \\
+echo "${target_pubkey}" >> /home/ansible/.ssh/authorized_keys && \\
+chown -R ansible:ansible /home/ansible/.ssh${C_RESET}
+        ${C_DIM}(or in TrueNAS GUI: paste key into user 'ansible' -> SSH Public Key)${C_RESET}
         ${C_CYAN}fleet-ansible install-pki <ip_or_hostname>${C_RESET}
 EOF
 }
@@ -404,12 +426,15 @@ COMPLETION_EOF
             PUB_KEY="/root/.ssh/ansible_controller.pub"
         fi
         if [ -f "$PUB_KEY" ]; then
+            KEY_CONTENT="$(cat "$PUB_KEY" 2>/dev/null | tr -d '\r\n')"
             echo "${C_BOLD}${C_GREEN}==>${C_RESET} ${C_BOLD}Ansible Controller Public Key (${C_CYAN}$PUB_KEY${C_RESET}${C_BOLD}):${C_RESET}"
             echo ""
-            cat "$PUB_KEY"
+            echo "$KEY_CONTENT"
             echo ""
-            echo "${C_DIM}Tip: Paste this key into /home/ansible/.ssh/authorized_keys (or TrueNAS / cloud-init)"
-            echo "on servers where password authentication is disabled.${C_RESET}"
+            echo "${C_BOLD}${C_YELLOW}Non-Destructive Target Setup Command (paste into target host shell):${C_RESET}"
+            echo "${C_CYAN}mkdir -p /home/ansible/.ssh && chmod 700 /home/ansible/.ssh && touch /home/ansible/.ssh/authorized_keys && chmod 600 /home/ansible/.ssh/authorized_keys && echo \"$KEY_CONTENT\" >> /home/ansible/.ssh/authorized_keys && chown -R ansible:ansible /home/ansible/.ssh${C_RESET}"
+            echo ""
+            echo "${C_DIM}(or in TrueNAS GUI: paste raw key into user 'ansible' -> SSH Public Key)${C_RESET}"
         else
             echo "${C_YELLOW}Notice: Controller key not found at $PUB_KEY${C_RESET}" >&2
             echo "Run 'fleet-ansible enroll' first to generate and enroll the key." >&2

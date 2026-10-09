@@ -136,4 +136,12 @@ if [[ "$status_out" != *"FLEET ENROLLMENT & HEALTH STATUS"* ]]; then
 fi
 echo "PASS: fleet-ansible status --no-ping executed successfully"
 
+# Test help command key embedding and fallback
+help_out="$("$APP_DIR/bin/fleet-ansible" help)"
+if [[ "$help_out" != *"mkdir -p /home/ansible/.ssh"* ]]; then
+    echo "FAIL: help output missing target setup command" >&2
+    exit 1
+fi
+echo "PASS: help output contains target setup command with key"
+
 echo "All CLI argument and resolution tests passed successfully!"
