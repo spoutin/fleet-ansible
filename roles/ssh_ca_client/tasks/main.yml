@@ -46,63 +46,75 @@
     group: root
     mode: '0755'
 
-- name: Download SSH CA public key
-  ansible.builtin.get_url:
-    url: "{{ ssh_ca_public_key_url }}"
-    dest: "{{ ssh_ca_keys_path }}"
-    owner: root
-    group: root
-    mode: '0644'
-    validate_certs: false
-  register: download_ca_key
-  ignore_errors: true
+- name: Stage SSH CA credentials and KRL on Ansible controller
+  delegate_to: localhost
+  run_once: true
+  become: false
+  block:
+    - name: Fetch SSH CA public key from PKI or OpenBao to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_ca_public_key_url }}"
+        dest: /tmp/fleet_ca_public_key.pub
+        mode: '0644'
+        validate_certs: false
+      register: controller_dl_ca
+      ignore_errors: true
 
-- name: Fallback download of SSH CA public key from OpenBao directly
-  ansible.builtin.get_url:
-    url: "{{ ssh_ca_fallback_url }}"
-    dest: "{{ ssh_ca_keys_path }}"
-    owner: root
-    group: root
-    mode: '0644'
-    validate_certs: false
-  when: download_ca_key is failed
+    - name: Fallback fetch SSH CA public key from OpenBao directly to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_ca_fallback_url }}"
+        dest: /tmp/fleet_ca_public_key.pub
+        mode: '0644'
+        validate_certs: false
+      when: controller_dl_ca is failed
+      ignore_errors: true
 
-- name: Download OpenSSH Key Revocation List (KRL)
-  ansible.builtin.get_url:
-    url: "{{ ssh_krl_url }}"
-    dest: "{{ ssh_krl_path }}"
-    owner: root
-    group: root
-    mode: '0644'
-    validate_certs: false
-  register: download_krl
-  ignore_errors: true
+    - name: Fetch OpenSSH Key Revocation List (KRL) to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_krl_url }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+        validate_certs: false
+      register: controller_dl_krl
+      ignore_errors: true
 
-- name: Fallback download of OpenSSH KRL
-  ansible.builtin.get_url:
-    url: "{{ ssh_krl_fallback_url }}"
-    dest: "{{ ssh_krl_path }}"
-    owner: root
-    group: root
-    mode: '0644'
-    validate_certs: false
-  when: download_krl is failed
-  register: download_krl_fallback
-  ignore_errors: true
+    - name: Fallback fetch OpenSSH KRL to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_krl_fallback_url }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+        validate_certs: false
+      when: controller_dl_krl is failed
+      register: controller_dl_krl_fallback
+      ignore_errors: true
 
-- name: Check if KRL exists on host
-  ansible.builtin.stat:
-    path: "{{ ssh_krl_path }}"
-  register: krl_stat
+    - name: Check if KRL was staged on controller
+      ansible.builtin.stat:
+        path: /tmp/fleet_revoked_keys.krl
+      register: controller_krl_stat
 
-- name: Initialize safe empty KRL if absent
+    - name: Initialize safe empty KRL on controller if absent
+      ansible.builtin.copy:
+        content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+      when: not controller_krl_stat.stat.exists or controller_krl_stat.stat.size == 0
+
+- name: Push SSH CA public key to host over SSH connection
   ansible.builtin.copy:
-    content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
+    src: /tmp/fleet_ca_public_key.pub
+    dest: "{{ ssh_ca_keys_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Push OpenSSH KRL to host over SSH connection
+  ansible.builtin.copy:
+    src: /tmp/fleet_revoked_keys.krl
     dest: "{{ ssh_krl_path }}"
     owner: root
     group: root
     mode: '0644'
-  when: not krl_stat.stat.exists
 
 - name: Check if /etc/ssh/sshd_config.d is supported
   ansible.builtin.stat:
