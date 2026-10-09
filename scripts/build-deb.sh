@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Script to assemble fleet-ansible Debian (.deb) package
-VERSION="${1:-0.5.4}"
+VERSION="${1:-0.6.0}"
 ARCH="${2:-amd64}"
 
 # Strip leading 'v' from version if present
@@ -35,6 +35,7 @@ echo "Staging fleet-ansible application files..."
 cp "${REPO_ROOT}/ansible.cfg" "${STAGING_DIR}/opt/fleet-ansible/"
 cp "${REPO_ROOT}/README.md" "${STAGING_DIR}/opt/fleet-ansible/"
 cp -r "${REPO_ROOT}/inventory" "${STAGING_DIR}/opt/fleet-ansible/"
+cp -r "${REPO_ROOT}/lib" "${STAGING_DIR}/opt/fleet-ansible/"
 cp -r "${REPO_ROOT}/playbooks" "${STAGING_DIR}/opt/fleet-ansible/"
 cp -r "${REPO_ROOT}/roles" "${STAGING_DIR}/opt/fleet-ansible/"
 

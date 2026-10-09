@@ -27,6 +27,22 @@
     dest: /tmp/60-pki-ssh-ca.conf
     mode: '0644'
 
+- name: Download OpenSSH KRL to hypervisor staging directory
+  ansible.builtin.get_url:
+    url: "{{ ssh_krl_url }}"
+    dest: /tmp/revoked-keys.krl
+    mode: '0644'
+    validate_certs: false
+  register: pve_dl_krl
+  ignore_errors: true
+
+- name: Initialize safe empty KRL on hypervisor if download failed
+  ansible.builtin.copy:
+    content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
+    dest: /tmp/revoked-keys.krl
+    mode: '0644'
+  when: pve_dl_krl is failed or not pve_dl_krl.dest is defined
+
 - name: Discover running LXC container IDs on hypervisor
   ansible.builtin.shell: |
     pct list 2>/dev/null | awk '$2=="running" {print $1}'
@@ -57,6 +73,9 @@
     # Push the CA public key
     pct push {{ item }} /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub -perms 644
     
+    # Push the KRL
+    pct push {{ item }} /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl -perms 644
+
     # Push the sshd drop-in configuration
     pct push {{ item }} /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf -perms 644
     
@@ -88,6 +107,7 @@
 
       CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
       CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
+      KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
       
       qm guest exec {{ item }} -- /bin/sh -c "which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo || dnf install -y sudo || true); \
         id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || true); \
@@ -95,6 +115,8 @@
         mkdir -p /etc/ssh/sshd_config.d && \
         echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && \
         chmod 644 /etc/ssh/trusted-user-ca-keys.pub && \
+        echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && \
+        chmod 644 /etc/ssh/revoked-keys.krl && \
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         (grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config) && \
@@ -113,6 +135,7 @@
     mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
     mkdir -p /etc/ssh/sshd_config.d
     cp /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+    cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
     cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
     grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
     /usr/sbin/sshd -t && systemctl reload ssh
@@ -123,4 +146,5 @@
     state: absent
   loop:
     - /tmp/pki-trusted-ca.pub
+    - /tmp/revoked-keys.krl
     - /tmp/60-pki-ssh-ca.conf

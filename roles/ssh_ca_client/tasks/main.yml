@@ -73,6 +73,43 @@
     validate_certs: false
   when: download_ca_key is failed
 
+- name: Download OpenSSH Key Revocation List (KRL)
+  ansible.builtin.get_url:
+    url: "{{ ssh_krl_url }}"
+    dest: "{{ ssh_krl_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: false
+  register: download_krl
+  ignore_errors: true
+
+- name: Fallback download of OpenSSH KRL
+  ansible.builtin.get_url:
+    url: "{{ ssh_krl_fallback_url }}"
+    dest: "{{ ssh_krl_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate_certs: false
+  when: download_krl is failed
+  register: download_krl_fallback
+  ignore_errors: true
+
+- name: Check if KRL exists on host
+  ansible.builtin.stat:
+    path: "{{ ssh_krl_path }}"
+  register: krl_stat
+
+- name: Initialize safe empty KRL if absent
+  ansible.builtin.copy:
+    content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
+    dest: "{{ ssh_krl_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+  when: not krl_stat.stat.exists
+
 - name: Check if /etc/ssh/sshd_config.d is supported
   ansible.builtin.stat:
     path: "{{ sshd_config_dropin_dir }}"
@@ -113,10 +150,65 @@
 
 - name: Configure sshd_config directly (for systems without drop-in directory)
   when: not (use_dropin | bool)
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?TrustedUserCAKeys'
-    line: "TrustedUserCAKeys {{ ssh_ca_keys_path }}"
-    state: present
-    validate: '/usr/sbin/sshd -t -f %s'
-  notify: reload sshd
+  block:
+    - name: Configure TrustedUserCAKeys in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?TrustedUserCAKeys'
+        line: "TrustedUserCAKeys {{ ssh_ca_keys_path }}"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+      notify: reload sshd
+
+    - name: Configure RevokedKeys in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?RevokedKeys'
+        line: "RevokedKeys {{ ssh_krl_path }}"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+      notify: reload sshd
+
+- name: Deploy fleet-ssh-krl-sync.service unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/fleet-ssh-krl-sync.service
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Sync Spoutin OpenSSH Key Revocation List (KRL)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c 'curl -s -f --etag-compare /tmp/krl.etag --etag-save /tmp/krl.etag {{ ssh_krl_url }} -o {{ ssh_krl_path }}.incoming && mv -f {{ ssh_krl_path }}.incoming {{ ssh_krl_path }} && chmod 644 {{ ssh_krl_path }} || true'
+  ignore_errors: true
+
+- name: Deploy fleet-ssh-krl-sync.timer unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/fleet-ssh-krl-sync.timer
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=Twice-Daily OpenSSH KRL Sync Timer
+
+      [Timer]
+      OnCalendar=*-*-* 04,16:00:00
+      RandomizedDelaySec=1800
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+  ignore_errors: true
+
+- name: Enable and start fleet-ssh-krl-sync.timer
+  ansible.builtin.systemd:
+    name: fleet-ssh-krl-sync.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  ignore_errors: true

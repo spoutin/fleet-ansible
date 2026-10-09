@@ -32,7 +32,7 @@ jobs:
 
       - name: Validate Python Syntax and Tests
         run: |
-          python3 -m py_compile inventory/orangutan.py
+          python3 -m py_compile inventory/orangutan.py lib/status.py
           python3 -m unittest discover tests/
 
       - name: Validate Playbook Syntax

@@ -9,6 +9,11 @@ ssh_ca_fallback_url: "https://secrets.int.spoutin.org/v1/ssh/public_key"
 # Path where the trusted CA key is installed on client hosts
 ssh_ca_keys_path: "/etc/ssh/trusted-user-ca-keys.pub"
 
+# OpenSSH Key Revocation List (KRL)
+ssh_krl_url: "https://wifi.int.spoutin.org/ssh-krl"
+ssh_krl_fallback_url: "https://pki.int.spoutin.org/ssh-krl"
+ssh_krl_path: "/etc/ssh/revoked-keys.krl"
+
 # Drop-in configuration directory and file
 ssh_config_dir: "/etc/ssh"
 sshd_config_dropin_dir: "/etc/ssh/sshd_config.d"

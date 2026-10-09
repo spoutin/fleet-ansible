@@ -118,4 +118,22 @@ if [[ "${COMPREPLY[*]}" != *"enroll"* ]]; then
 fi
 echo "PASS: Dynamic completion output successfully completed 'enroll'"
 
+# Verify 'status' is completed
+COMP_WORDS=("fleet-ansible" "st")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"status"* ]]; then
+    echo "FAIL: Dynamic completion output failed to complete 'status': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed 'status'"
+
+# Test fleet-ansible status --no-ping runs without error
+status_out="$("$APP_DIR/bin/fleet-ansible" status --no-ping)"
+if [[ "$status_out" != *"FLEET ENROLLMENT & HEALTH STATUS"* ]]; then
+    echo "FAIL: fleet-ansible status --no-ping did not return expected table header" >&2
+    exit 1
+fi
+echo "PASS: fleet-ansible status --no-ping executed successfully"
+
 echo "All CLI argument and resolution tests passed successfully!"

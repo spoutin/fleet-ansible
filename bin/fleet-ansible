@@ -65,6 +65,7 @@ ${C_BOLD}${C_YELLOW}Usage:${C_RESET}
   fleet-ansible [command] [target] [options]
 
 ${C_BOLD}${C_YELLOW}Commands:${C_RESET}
+  ${C_BOLD}${C_GREEN}status${C_RESET} ${C_DIM}[target]${C_RESET}      Show fleet enrollment dashboard (live check, PAUSED, & error states)
   ${C_BOLD}${C_GREEN}bootstrap${C_RESET} ${C_DIM}[target]${C_RESET}   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet)
   ${C_BOLD}${C_GREEN}ping${C_RESET} ${C_DIM}[target]${C_RESET}        Test SSH connectivity (IP, hostname, group, or whole fleet)
@@ -253,6 +254,13 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
+    status)
+        setup_password_file "$@"
+        "$PYTHON_CMD" "$APP_DIR/lib/status.py" "$@"
+        RET=$?
+        cleanup
+        exit $RET
+        ;;
     bootstrap)
         parse_target "$@"
         resolve_target
@@ -307,7 +315,7 @@ _fleet_ansible_complete() {
         cword=$COMP_CWORD
     fi
 
-    local commands="bootstrap install-pki ping enroll renew-cert show-key public-key completion inventory raw help"
+    local commands="status bootstrap install-pki ping enroll renew-cert show-key public-key completion inventory raw help"
     local options="-k --ask-pass -v -vvv -l --limit -h --help"
 
     if [ "$cword" -eq 1 ]; then
