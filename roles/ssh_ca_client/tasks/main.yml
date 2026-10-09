@@ -175,46 +175,20 @@
         validate: '/usr/sbin/sshd -t -f %s'
       notify: reload sshd
 
-- name: Deploy fleet-ssh-krl-sync.service unit
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/fleet-ssh-krl-sync.service
-    owner: root
-    group: root
-    mode: '0644'
-    content: |
-      [Unit]
-      Description=Sync Spoutin OpenSSH Key Revocation List (KRL)
-      After=network-online.target
-      Wants=network-online.target
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/sh -c 'curl -s -f --etag-compare /tmp/krl.etag --etag-save /tmp/krl.etag {{ ssh_krl_url }} -o {{ ssh_krl_path }}.incoming && mv -f {{ ssh_krl_path }}.incoming {{ ssh_krl_path }} && chmod 644 {{ ssh_krl_path }} || true'
-  ignore_errors: true
-
-- name: Deploy fleet-ssh-krl-sync.timer unit
-  ansible.builtin.copy:
-    dest: /etc/systemd/system/fleet-ssh-krl-sync.timer
-    owner: root
-    group: root
-    mode: '0644'
-    content: |
-      [Unit]
-      Description=Fast 15-Minute OpenSSH KRL Sync Timer
-
-      [Timer]
-      OnCalendar=*:0/15
-      RandomizedDelaySec=60
-      Persistent=true
-
-      [Install]
-      WantedBy=timers.target
-  ignore_errors: true
-
-- name: Enable and start fleet-ssh-krl-sync.timer
+- name: Remove legacy client-side KRL sync timer if present
   ansible.builtin.systemd:
     name: fleet-ssh-krl-sync.timer
-    enabled: true
-    state: started
-    daemon_reload: true
+    enabled: false
+    state: stopped
+  ignore_errors: true
+
+- name: Remove legacy client-side KRL sync unit files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/fleet-ssh-krl-sync.timer
+    - /etc/systemd/system/fleet-ssh-krl-sync.service
+    - /tmp/krl.etag
+    - /etc/ssh/revoked-keys.krl.incoming
   ignore_errors: true

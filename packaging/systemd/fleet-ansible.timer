@@ -1,10 +1,11 @@
 [Unit]
-Description=Daily sync of Spoutin Fleet SSH CA Trust
+Description=Periodic sync of Spoutin Fleet SSH CA Trust & KRL
+Documentation=https://github.com/spoutin/fleet-ansible
 
 [Timer]
-OnCalendar=daily
+OnCalendar=hourly
 Persistent=true
-RandomizedDelaySec=1800
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
