@@ -1,10 +1,4 @@
 ---
-- name: Ensure sudo package is installed
-  ansible.builtin.package:
-    name: sudo
-    state: present
-  ignore_errors: true
-
 - name: Ensure ansible service user exists
   ansible.builtin.user:
     name: ansible
