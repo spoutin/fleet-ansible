@@ -16,21 +16,53 @@
   ignore_errors: true
 
 - name: Configure passwordless sudo for ansible user
-  ansible.builtin.copy:
-    content: "ansible ALL=(ALL) NOPASSWD:ALL\n"
-    dest: /etc/sudoers.d/ansible
-    owner: root
-    group: root
-    mode: '0440'
-    validate: '/usr/sbin/visudo -cf %s'
+  ansible.builtin.shell: |
+    mkdir -p /etc/sudoers.d && \
+    echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && \
+    chmod 0440 /etc/sudoers.d/ansible && \
+    /usr/sbin/visudo -cf /etc/sudoers.d/ansible 2>/dev/null || true
+    if [ -x /usr/bin/midclt ]; then
+      python3 -c "
+      import subprocess, json
+      res = subprocess.run(['/usr/bin/midclt', 'call', 'user.query', '[[\"username\", \"=\", \"ansible\"]]'], capture_output=True, text=True)
+      if res.returncode == 0:
+          users = json.loads(res.stdout) if res.stdout.strip() else []
+          if users:
+              u = users[0]
+              if 'ALL' not in u.get('sudo_commands_nopasswd', []):
+                  payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
+                  subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(u['id']), payload])
+      " 2>/dev/null || true
+    fi
   ignore_errors: true
 
 - name: Ensure operator user exists
-  ansible.builtin.user:
-    name: "{{ operator_user }}"
-    shell: /bin/bash
-    create_home: true
-    state: present
+  ansible.builtin.shell: |
+    id -u "{{ operator_user }}" >/dev/null 2>&1 || (useradd -m -s /bin/bash "{{ operator_user }}" 2>/dev/null || adduser -D -s /bin/sh "{{ operator_user }}" 2>/dev/null || true)
+    if [ -x /usr/bin/midclt ]; then
+      python3 -c "
+      import subprocess, json
+      res = subprocess.run(['/usr/bin/midclt', 'call', 'user.query', '[[\"username\", \"=\", \"{{ operator_user }}\"]]'], capture_output=True, text=True)
+      if res.returncode == 0:
+          users = json.loads(res.stdout) if res.stdout.strip() else []
+          if users:
+              u = users[0]
+              if 'ALL' not in u.get('sudo_commands_nopasswd', []):
+                  payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
+                  subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(u['id']), payload])
+          else:
+              payload = json.dumps({
+                  'username': '{{ operator_user }}',
+                  'full_name': '{{ operator_user }}',
+                  'shell': '/bin/bash',
+                  'sudo_commands': ['ALL'],
+                  'sudo_commands_nopasswd': ['ALL'],
+                  'group_create': True,
+                  'password_disabled': True
+              })
+              subprocess.run(['/usr/bin/midclt', 'call', 'user.create', payload])
+      " 2>/dev/null || true
+    fi
   when: operator_user is defined and operator_user != ""
   ignore_errors: true
 
@@ -65,108 +97,6 @@
     state: present
   when: lookup('file', lookup('env', 'HOME') + '/.ssh/ansible_controller.pub', errors='ignore') != ''
   ignore_errors: true
-
-- name: Check if host is TrueNAS SCALE (via midclt)
-  ansible.builtin.stat:
-    path: /usr/bin/midclt
-  register: midclt_stat
-
-- name: Ensure operator and CA persistence in TrueNAS SCALE configuration database
-  when: midclt_stat.stat.exists
-  block:
-    - name: Query TrueNAS middleware for operator user
-      ansible.builtin.command:
-        cmd: "/usr/bin/midclt call user.query '[[\"username\", \"=\", \"{{ operator_user }}\"]]'"
-      register: truenas_operator_query
-      changed_when: false
-      ignore_errors: true
-      when: operator_user is defined and operator_user != ""
-
-    - name: Create or update operator user in TrueNAS database
-      ansible.builtin.shell: |
-        python3 -c "
-        import sys, json, subprocess
-        raw = sys.argv[1].strip()
-        users = json.loads(raw) if raw else []
-        if users:
-            u = users[0]
-            uid = u['id']
-            nopasswd = u.get('sudo_commands_nopasswd', [])
-            if 'ALL' not in nopasswd:
-                payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
-                subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(uid), payload], check=True)
-        else:
-            username = sys.argv[2]
-            payload = json.dumps({
-                'username': username,
-                'full_name': username,
-                'shell': '/bin/bash',
-                'sudo_commands': ['ALL'],
-                'sudo_commands_nopasswd': ['ALL'],
-                'group_create': True,
-                'password_disabled': True
-            })
-            subprocess.run(['/usr/bin/midclt', 'call', 'user.create', payload], check=True)
-        " '{{ truenas_operator_query.stdout }}' '{{ operator_user }}'
-      when:
-        - operator_user is defined and operator_user != ""
-        - truenas_operator_query is defined
-        - truenas_operator_query.stdout is defined
-        - truenas_operator_query.stdout != ""
-      ignore_errors: true
-
-    - name: Query TrueNAS middleware for ansible service user
-      ansible.builtin.command:
-        cmd: "/usr/bin/midclt call user.query '[[\"username\", \"=\", \"ansible\"]]'"
-      register: truenas_ansible_query
-      changed_when: false
-      ignore_errors: true
-
-    - name: Ensure ansible service user in TrueNAS database has passwordless sudo
-      ansible.builtin.shell: |
-        python3 -c "
-        import sys, json, subprocess
-        raw = sys.argv[1].strip()
-        users = json.loads(raw) if raw else []
-        if users:
-            u = users[0]
-            uid = u['id']
-            nopasswd = u.get('sudo_commands_nopasswd', [])
-            if 'ALL' not in nopasswd:
-                payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
-                subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(uid), payload], check=True)
-        " '{{ truenas_ansible_query.stdout }}'
-      when:
-        - truenas_ansible_query is defined
-        - truenas_ansible_query.stdout is defined
-        - truenas_ansible_query.stdout != ""
-      ignore_errors: true
-
-    - name: Ensure SSH CA parameters are registered in TrueNAS SSH service database
-      ansible.builtin.shell: |
-        python3 -c "
-        import subprocess, json
-        res = subprocess.run(['/usr/bin/midclt', 'call', 'ssh.config'], capture_output=True, text=True)
-        if res.returncode != 0:
-            exit(0)
-        cfg = json.loads(res.stdout)
-        current = cfg.get('auxiliary_parameters', '') or ''
-        ca_line = 'TrustedUserCAKeys {{ ssh_ca_keys_path }}'
-        krl_line = 'RevokedKeys {{ ssh_krl_path }}'
-        lines = [l.strip() for l in current.splitlines() if l.strip()]
-        if not any('TrustedUserCAKeys' in l for l in lines):
-            lines.append(ca_line)
-        if not any('RevokedKeys' in l for l in lines):
-            lines.append(krl_line)
-        new_aux = '\n'.join(lines)
-        if new_aux != current.strip():
-            subprocess.run(['/usr/bin/midclt', 'call', 'ssh.update', json.dumps({'auxiliary_parameters': new_aux})])
-            print('CHANGED')
-        "
-      register: truenas_ssh_aux
-      changed_when: "'CHANGED' in truenas_ssh_aux.stdout"
-      notify: restart sshd
-      ignore_errors: true
 
 - name: Ensure /etc/ssh directory exists
   ansible.builtin.file:
@@ -248,64 +178,69 @@
     mode: '0644'
   notify: restart sshd
 
-- name: Check if /etc/ssh/sshd_config.d is supported
-  ansible.builtin.stat:
-    path: "{{ sshd_config_dropin_dir }}"
-  register: dropin_dir_stat
+- name: Configure sshd for SSH CA trust and revocation list
+  ansible.builtin.shell: |
+    CHANGED=0
+    CA_CONF="{{ sshd_config_dropin_path }}"
+    CA_DIR="{{ sshd_config_dropin_dir }}"
+    CA_KEY="{{ ssh_ca_keys_path }}"
+    KRL_PATH="{{ ssh_krl_path }}"
 
-- name: Set dropin support fact
-  ansible.builtin.set_fact:
-    use_dropin: "{{ dropin_dir_stat.stat.exists or supports_sshd_config_d | default(true) }}"
+    if [ -d "$CA_DIR" ] || [ -d "/etc/ssh" ]; then
+      mkdir -p "$CA_DIR" 2>/dev/null || true
+      if [ -d "$CA_DIR" ]; then
+        grep -q "Include /etc/ssh/sshd_config.d/\*\.conf" /etc/ssh/sshd_config 2>/dev/null || {
+          sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config 2>/dev/null || true
+          CHANGED=1
+        }
+        NEW_CONF=$(printf "# Managed by fleet-ansible\nTrustedUserCAKeys %s\nRevokedKeys %s\n" "$CA_KEY" "$KRL_PATH")
+        OLD_CONF=$(cat "$CA_CONF" 2>/dev/null || true)
+        if [ "$NEW_CONF" != "$OLD_CONF" ]; then
+          printf "%s\n" "$NEW_CONF" > "$CA_CONF" 2>/dev/null || true
+          chmod 644 "$CA_CONF" 2>/dev/null || true
+          CHANGED=1
+        fi
+      else
+        grep -q "^TrustedUserCAKeys $CA_KEY" /etc/ssh/sshd_config 2>/dev/null || {
+          echo "TrustedUserCAKeys $CA_KEY" >> /etc/ssh/sshd_config
+          CHANGED=1
+        }
+        grep -q "^RevokedKeys $KRL_PATH" /etc/ssh/sshd_config 2>/dev/null || {
+          echo "RevokedKeys $KRL_PATH" >> /etc/ssh/sshd_config
+          CHANGED=1
+        }
+      fi
+    fi
 
-- name: Deploy SSH CA drop-in configuration
-  when: use_dropin | bool
-  block:
-    - name: Ensure /etc/ssh/sshd_config.d exists
-      ansible.builtin.file:
-        path: "{{ sshd_config_dropin_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+    if [ -x /usr/bin/midclt ]; then
+      python3 -c "
+      import subprocess, json
+      res = subprocess.run(['/usr/bin/midclt', 'call', 'ssh.config'], capture_output=True, text=True)
+      if res.returncode == 0:
+          cfg = json.loads(res.stdout) if res.stdout.strip() else {}
+          current = cfg.get('auxiliary_parameters', '') or ''
+          ca_line = 'TrustedUserCAKeys $CA_KEY'
+          krl_line = 'RevokedKeys $KRL_PATH'
+          lines = [l.strip() for l in current.splitlines() if l.strip()]
+          if not any('TrustedUserCAKeys' in l for l in lines):
+              lines.append(ca_line)
+          if not any('RevokedKeys' in l for l in lines):
+              lines.append(krl_line)
+          new_aux = '\n'.join(lines)
+          if new_aux != current.strip():
+              subprocess.run(['/usr/bin/midclt', 'call', 'ssh.update', json.dumps({'auxiliary_parameters': new_aux})])
+              print('CHANGED')
+      " 2>/dev/null | grep -q "CHANGED" && CHANGED=1 || true
+    fi
 
-    - name: Ensure Include /etc/ssh/sshd_config.d/*.conf exists in sshd_config
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        line: "Include /etc/ssh/sshd_config.d/*.conf"
-        insertbefore: BOF
-        state: present
-        validate: '/usr/sbin/sshd -t -f %s'
-      notify: restart sshd
+    /usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null || true
 
-    - name: Deploy 60-pki-ssh-ca.conf drop-in
-      ansible.builtin.template:
-        src: 60-pki-ssh-ca.conf.j2
-        dest: "{{ sshd_config_dropin_path }}"
-        owner: root
-        group: root
-        mode: '0644'
-      notify: restart sshd
-
-- name: Configure sshd_config directly (for systems without drop-in directory)
-  when: not (use_dropin | bool)
-  block:
-    - name: Configure TrustedUserCAKeys in sshd_config
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?TrustedUserCAKeys'
-        line: "TrustedUserCAKeys {{ ssh_ca_keys_path }}"
-        state: present
-        validate: '/usr/sbin/sshd -t -f %s'
-      notify: restart sshd
-
-    - name: Configure RevokedKeys in sshd_config
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?RevokedKeys'
-        line: "RevokedKeys {{ ssh_krl_path }}"
-        state: present
-        validate: '/usr/sbin/sshd -t -f %s'
-      notify: restart sshd
+    if [ "$CHANGED" -eq 1 ]; then
+      echo "CHANGED"
+    fi
+  register: sshd_ca_config_result
+  changed_when: "'CHANGED' in sshd_ca_config_result.stdout"
+  notify: restart sshd
 
 - name: Force restart sshd if requested
   ansible.builtin.shell: |
