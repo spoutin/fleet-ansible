@@ -23,32 +23,45 @@ from orangutan import (
 )
 
 
-def classify_host_status(ping_line: str, is_managed: bool = True) -> Tuple[str, str, str]:
-    """Classifies an Ansible ping result into an actionable status code, badge, and detail."""
-    if "SUCCESS" in ping_line:
+def classify_host_status(check_line: str, is_managed: bool = True) -> Tuple[str, str, str]:
+    """Classifies an Ansible probe result into an actionable status code, badge, and detail."""
+    if "CA_ENROLLED" in check_line:
+        if is_managed:
+            return ("ENROLLED", "●", "OK (CA Trust Active)")
+        else:
+            return ("PAUSED", "⏸", "Enrolled with CA, but toggled OFF in LAN-Orangutan")
+
+    if "KEY_ONLY" in check_line:
+        if is_managed:
+            return ("KEY_ONLY", "◐", "SSH key verified; PKI not installed")
+        else:
+            return ("PAUSED", "⏸", "Key authorized, but toggled OFF in LAN-Orangutan")
+
+    if "NO_SUDO" in check_line or "Missing sudo password" in check_line:
+        return ("NO_SUDO", "▲", "User 'ansible' lacks passwordless sudo")
+
+    # Fallback / backward-compatibility with ping output
+    if "SUCCESS" in check_line and "ping" in check_line:
         if is_managed:
             return ("ENROLLED", "●", "OK (CA / Key Verified)")
         else:
             return ("PAUSED", "⏸", "Enrolled, but toggled OFF in LAN-Orangutan")
 
-    if "Permission denied" in ping_line:
-        if "(publickey)." in ping_line:
+    if "Permission denied" in check_line:
+        if "(publickey)." in check_line:
             return ("AUTH_ERROR", "✖", "Key rejected & Password auth disabled")
-        elif "(publickey,password)" in ping_line:
+        elif "(publickey,password)" in check_line:
             return ("AUTH_ERROR", "✖", "Key rejected & Password invalid or missing")
         else:
             return ("AUTH_ERROR", "✖", "User 'ansible' missing or rejected")
 
-    if "Connection refused" in ping_line:
+    if "Connection refused" in check_line:
         return ("OFFLINE", "○", "Port 22 closed / SSH stopped")
 
-    if "timed out" in ping_line or "No route to host" in ping_line or "unreachable" in ping_line.lower():
+    if "timed out" in check_line or "No route to host" in check_line or "unreachable" in check_line.lower():
         return ("OFFLINE", "○", "Host offline / connection timed out")
 
-    if "Missing sudo password" in ping_line:
-        return ("NO_SUDO", "▲", "User 'ansible' lacks passwordless sudo")
-
-    detail = ping_line.split("=>", 1)[-1].strip() if "=>" in ping_line else "Check failed"
+    detail = check_line.split("=>", 1)[-1].strip() if "=>" in check_line else "Check failed"
     return ("FAILED", "✖", detail[:50])
 
 
@@ -107,6 +120,7 @@ def format_status_table(records: List[Dict[str, Any]], use_color: bool = True) -
     lines.append("=" * 110)
 
     enrolled = 0
+    key_only = 0
     paused = 0
     auth_err = 0
     offline = 0
@@ -124,6 +138,10 @@ def format_status_table(records: List[Dict[str, Any]], use_color: bool = True) -
         if status == "ENROLLED":
             enrolled += 1
             color = c_green
+        elif status == "KEY_ONLY":
+            key_only += 1
+            color = c_yellow
+            next_steps.append(f"  • {c_bold}{host}{c_reset}: SSH key authorized, but CA trust not installed. Run: fleet-ansible install-pki {host}")
         elif status == "PAUSED":
             paused += 1
             color = c_cyan
@@ -142,6 +160,8 @@ def format_status_table(records: List[Dict[str, Any]], use_color: bool = True) -
         elif status == "OFFLINE":
             offline += 1
             color = c_dim
+        elif status == "UNMANAGED":
+            color = c_dim
         else:
             color = c_reset
 
@@ -152,6 +172,8 @@ def format_status_table(records: List[Dict[str, Any]], use_color: bool = True) -
     summary_parts = []
     if enrolled:
         summary_parts.append(f"{c_green}{enrolled} Enrolled{c_reset}")
+    if key_only:
+        summary_parts.append(f"{c_yellow}{key_only} Key Only{c_reset}")
     if paused:
         summary_parts.append(f"{c_cyan}{paused} Paused{c_reset}")
     if auth_err:
@@ -232,7 +254,7 @@ def main():
             return [999, 999, 999, 999]
     target_list.sort(key=ip_key)
 
-    # 2. Perform live ping check if not disabled
+    # 2. Perform live check if not disabled
     ping_results = {}
     if not args.no_ping:
         app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -242,12 +264,17 @@ def main():
 
         # Build comma-separated targets
         target_ips = ",".join(h["ip"] for h in target_list) + ","
+        probe_cmd = (
+            "sh -c 'CA=0; SUDO=0; test -f /etc/ssh/trusted-user-ca-keys.pub && CA=1; "
+            "(command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null) && SUDO=1; "
+            "if [ \"$SUDO\" = \"0\" ]; then echo NO_SUDO; elif [ \"$CA\" = \"1\" ]; then echo CA_ENROLLED; else echo KEY_ONLY; fi'"
+        )
         try:
             res = subprocess.run(
-                [ansible_cmd, "-i", target_ips, "all", "-m", "ping", "-o"],
+                [ansible_cmd, "-i", target_ips, "all", "-m", "command", "-a", probe_cmd, "-o"],
                 capture_output=True,
                 text=True,
-                timeout=20,
+                timeout=25,
             )
             for line in (res.stdout + "\n" + res.stderr).splitlines():
                 if "|" in line:
@@ -264,7 +291,7 @@ def main():
         if args.no_ping:
             status = "ENROLLED" if is_managed else "UNMANAGED"
             badge = "●" if is_managed else "·"
-            detail = "Managed in inventory (ping skipped)" if is_managed else "Unmanaged in inventory"
+            detail = "Managed in inventory (check skipped)" if is_managed else "Unmanaged in inventory"
         else:
             line = ping_results.get(ip, "")
             if line:

@@ -9,7 +9,28 @@ from lib.status import classify_host_status, format_status_table
 
 
 class TestStatusClassification(unittest.TestCase):
-    def test_enrolled_host(self):
+    def test_enrolled_host_probe(self):
+        line = 'pve1 | CHANGED | rc=0 | (stdout) CA_ENROLLED'
+        status, badge, detail = classify_host_status(line, is_managed=True)
+        self.assertEqual(status, "ENROLLED")
+        self.assertEqual(badge, "●")
+        self.assertIn("CA Trust Active", detail)
+
+    def test_key_only_host(self):
+        line = 'distrubted | CHANGED | rc=0 | (stdout) KEY_ONLY'
+        status, badge, detail = classify_host_status(line, is_managed=True)
+        self.assertEqual(status, "KEY_ONLY")
+        self.assertEqual(badge, "◐")
+        self.assertIn("PKI not installed", detail)
+
+    def test_no_sudo_host(self):
+        line = 'server02 | CHANGED | rc=0 | (stdout) NO_SUDO'
+        status, badge, detail = classify_host_status(line, is_managed=True)
+        self.assertEqual(status, "NO_SUDO")
+        self.assertEqual(badge, "▲")
+        self.assertIn("passwordless sudo", detail)
+
+    def test_enrolled_host_legacy_ping(self):
         line = 'pve1 | SUCCESS => {"changed": false, "ping": "pong"}'
         status, badge, detail = classify_host_status(line, is_managed=True)
         self.assertEqual(status, "ENROLLED")
