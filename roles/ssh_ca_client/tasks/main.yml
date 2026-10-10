@@ -306,3 +306,9 @@
         state: present
         validate: '/usr/sbin/sshd -t -f %s'
       notify: restart sshd
+
+- name: Force restart sshd if requested
+  ansible.builtin.service:
+    name: "{{ sshd_service_name }}"
+    state: restarted
+  when: restart_sshd | default(false) | bool

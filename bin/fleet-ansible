@@ -84,7 +84,8 @@ ${C_BOLD}${C_YELLOW}Usage:${C_RESET}
 ${C_BOLD}${C_YELLOW}Commands:${C_RESET}
   ${C_BOLD}${C_GREEN}status${C_RESET} ${C_DIM}[target]${C_RESET}      Show fleet enrollment dashboard (live check, PAUSED, & error states)
   ${C_BOLD}${C_GREEN}bootstrap${C_RESET} ${C_DIM}[target]${C_RESET}   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
-  ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet)
+  ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet; pass --restart to force sshd restart)
+  ${C_BOLD}${C_GREEN}restart-ssh${C_RESET} ${C_DIM}[target]${C_RESET}   Safely validate and restart sshd on target (or whole fleet)
   ${C_BOLD}${C_GREEN}ping${C_RESET} ${C_DIM}[target]${C_RESET}        Test SSH connectivity (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}enroll${C_RESET}               Enroll controller key with OpenBao CA & configure SSH certificate
   ${C_BOLD}${C_GREEN}show-key${C_RESET}             Display controller public key (to paste into TrueNAS/cloud-init)
@@ -306,6 +307,18 @@ case "$CMD" in
         setup_password_file "${EXTRA_ARGS[@]}"
         INV_ARGS=(-i "$APP_DIR/inventory")
         LIMIT_ARGS=()
+        CLEAN_EXTRA_ARGS=()
+        FORCE_RESTART=false
+        for arg in "${EXTRA_ARGS[@]}"; do
+            if [ "$arg" = "--restart" ] || [ "$arg" = "-r" ]; then
+                FORCE_RESTART=true
+            else
+                CLEAN_EXTRA_ARGS+=("$arg")
+            fi
+        done
+        if [ "$FORCE_RESTART" = true ]; then
+            CLEAN_EXTRA_ARGS+=(-e "restart_sshd=true")
+        fi
         if [ -n "$TARGET" ]; then
             if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 INV_ARGS+=(-i "$TARGET,")
@@ -315,7 +328,19 @@ case "$CMD" in
         else
             echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Installing SSH CA PKI Trust Across Managed Fleet...${C_RESET}"
         fi
-        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${EXTRA_ARGS[@]}"
+        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${CLEAN_EXTRA_ARGS[@]}"
+        ;;
+    restart-ssh)
+        parse_target "$@"
+        resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
+        RESTART_TARGET="${TARGET:-all}"
+        RESTART_INV=(-i "$APP_DIR/inventory")
+        if [[ "$RESTART_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            RESTART_INV+=(-i "$RESTART_TARGET,")
+        fi
+        echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Restarting SSH service on [${C_CYAN}$RESTART_TARGET${C_RESET}${C_BOLD}]...${C_RESET}"
+        run_ansible_cmd "${RESTART_INV[@]}" "$RESTART_TARGET" -b -m shell -a "(/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || (which midclt >/dev/null 2>&1 && midclt call service.restart 'ssh') || true)" "${EXTRA_ARGS[@]}"
         ;;
     enroll|renew-cert)
         echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Enrolling Ansible Controller & Issuing SSH Certificate via OpenBao...${C_RESET}"
@@ -337,8 +362,8 @@ _fleet_ansible_complete() {
         cword=$COMP_CWORD
     fi
 
-    local commands="status bootstrap install-pki ping enroll renew-cert show-key public-key completion inventory raw help"
-    local options="-k --ask-pass -v -vvv -l --limit -h --help"
+    local commands="status bootstrap install-pki restart-ssh ping enroll renew-cert show-key public-key completion inventory raw help"
+    local options="-k --ask-pass -v -vvv -l --limit -r --restart -h --help"
 
     if [ "$cword" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )

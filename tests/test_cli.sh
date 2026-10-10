@@ -128,6 +128,16 @@ if [[ "${COMPREPLY[*]}" != *"status"* ]]; then
 fi
 echo "PASS: Dynamic completion output successfully completed 'status'"
 
+# Verify 'restart-ssh' is completed
+COMP_WORDS=("fleet-ansible" "res")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"restart-ssh"* ]]; then
+    echo "FAIL: Dynamic completion output failed to complete 'restart-ssh': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed 'restart-ssh'"
+
 # Test fleet-ansible status --no-ping runs without error
 status_out="$("$APP_DIR/bin/fleet-ansible" status --no-ping)"
 if [[ "$status_out" != *"FLEET ENROLLMENT & HEALTH STATUS"* ]]; then
