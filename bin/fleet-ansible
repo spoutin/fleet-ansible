@@ -273,6 +273,13 @@ run_ansible_cmd() {
     exit $ret
 }
 
+setup_base_inventory() {
+    INV_ARGS=(-i "$APP_DIR/inventory")
+    if [ -f "/etc/fleet/static_hosts.yml" ]; then
+        INV_ARGS+=(-i "/etc/fleet/static_hosts.yml")
+    fi
+}
+
 CMD="${1:-help}"
 shift || true
 
@@ -288,7 +295,7 @@ case "$CMD" in
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
-        INV_ARGS=(-i "$APP_DIR/inventory")
+        setup_base_inventory
         LIMIT_ARGS=()
         if [ -n "$TARGET" ]; then
             if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -305,7 +312,7 @@ case "$CMD" in
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
-        INV_ARGS=(-i "$APP_DIR/inventory")
+        setup_base_inventory
         LIMIT_ARGS=()
         CLEAN_EXTRA_ARGS=()
         FORCE_RESTART=false
@@ -334,8 +341,9 @@ case "$CMD" in
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
+        setup_base_inventory
         RESTART_TARGET="${TARGET:-all}"
-        RESTART_INV=(-i "$APP_DIR/inventory")
+        RESTART_INV=("${INV_ARGS[@]}")
         if [[ "$RESTART_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             RESTART_INV+=(-i "$RESTART_TARGET,")
         fi
@@ -344,7 +352,8 @@ case "$CMD" in
         ;;
     enroll|renew-cert)
         echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Enrolling Ansible Controller & Issuing SSH Certificate via OpenBao...${C_RESET}"
-        run_ansible_playbook -i "$APP_DIR/inventory" "$APP_DIR/playbooks/enroll.yml" "$@"
+        setup_base_inventory
+        run_ansible_playbook "${INV_ARGS[@]}" "$APP_DIR/playbooks/enroll.yml" "$@"
         ;;
     completion)
         cat << 'COMPLETION_EOF'
@@ -433,8 +442,9 @@ COMPLETION_EOF
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
+        setup_base_inventory
         PING_TARGET="${TARGET:-all}"
-        PING_INV=(-i "$APP_DIR/inventory")
+        PING_INV=("${INV_ARGS[@]}")
         if [[ "$PING_TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             PING_INV+=(-i "$PING_TARGET,")
         fi
@@ -468,7 +478,8 @@ COMPLETION_EOF
         ;;
     raw)
         setup_password_file "$@"
-        run_ansible_playbook -i "$APP_DIR/inventory" "$@"
+        setup_base_inventory
+        run_ansible_playbook "${INV_ARGS[@]}" "$@"
         ;;
     help|--help|-h)
         show_help

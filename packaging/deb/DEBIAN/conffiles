@@ -1,0 +1,2 @@
+/opt/fleet-ansible/inventory/static_hosts.yml
+/opt/fleet-ansible/inventory/group_vars/all.yml

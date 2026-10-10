@@ -66,31 +66,50 @@ def classify_host_status(check_line: str, is_managed: bool = True) -> Tuple[str,
 
 
 def load_static_hosts() -> List[Dict[str, Any]]:
-    """Loads hypervisors from static_hosts.yml if present."""
-    static_file = os.path.join(os.path.dirname(__file__), "..", "inventory", "static_hosts.yml")
+    """Loads hypervisors from /etc/fleet/static_hosts.yml or static_hosts.yml if present."""
+    candidate_files = [
+        "/etc/fleet/static_hosts.yml",
+        os.path.join(os.path.dirname(__file__), "..", "inventory", "static_hosts.yml"),
+        "/opt/fleet-ansible/inventory/static_hosts.yml",
+    ]
+    seen_ips = set()
     hosts = []
-    if os.path.exists(static_file):
+
+    for static_file in candidate_files:
+        if not os.path.exists(static_file):
+            continue
         try:
             with open(static_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            # Simple line parsing to avoid yaml dependency if pyyaml not installed
+            in_hypervisors = False
             current_host = None
             for line in content.splitlines():
                 stripped = line.strip()
-                if stripped.startswith("pve") and stripped.endswith(":"):
-                    current_host = stripped.rstrip(":")
-                elif current_host and "ansible_host:" in stripped:
-                    ip = stripped.split("ansible_host:")[-1].split("#")[0].strip()
-                    hosts.append({
-                        "name": current_host,
-                        "ip": ip,
-                        "os": "Proxmox",
-                        "source": "static_hosts.yml",
-                        "is_managed": True,
-                    })
-                    current_host = None
+                if stripped.startswith("hypervisors:"):
+                    in_hypervisors = True
+                    continue
+                if in_hypervisors:
+                    if stripped.startswith("vars:") or stripped.startswith("children:"):
+                        in_hypervisors = False
+                        current_host = None
+                        continue
+                    if (line.startswith("        ") or line.startswith("      ")) and stripped.endswith(":") and not stripped.startswith("hosts:"):
+                        current_host = stripped.rstrip(":")
+                    elif current_host and "ansible_host:" in stripped:
+                        ip = stripped.split("ansible_host:")[-1].split("#")[0].strip()
+                        if ip and ip not in seen_ips:
+                            seen_ips.add(ip)
+                            hosts.append({
+                                "name": current_host,
+                                "ip": ip,
+                                "os": "Proxmox",
+                                "source": os.path.basename(static_file),
+                                "is_managed": True,
+                            })
+                        current_host = None
         except Exception:
             pass
+
     if not hosts:
         # Default known hypervisors
         hosts = [
