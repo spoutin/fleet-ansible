@@ -1,4 +1,12 @@
 ---
+- name: Ensure #includedir /etc/sudoers.d exists in /etc/sudoers
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
+    line: "#includedir /etc/sudoers.d"
+    state: present
+    validate: '/usr/sbin/visudo -cf %s'
+  ignore_errors: true
+
 - name: Ensure ansible service user exists
   ansible.builtin.user:
     name: ansible
@@ -15,6 +23,26 @@
     group: root
     mode: '0440'
     validate: '/usr/sbin/visudo -cf %s'
+  ignore_errors: true
+
+- name: Ensure operator user exists
+  ansible.builtin.user:
+    name: "{{ operator_user }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+  when: operator_user is defined and operator_user != ""
+  ignore_errors: true
+
+- name: Configure passwordless sudo for operator user
+  ansible.builtin.copy:
+    content: "{{ operator_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    dest: "/etc/sudoers.d/{{ operator_user }}"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: '/usr/sbin/visudo -cf %s'
+  when: operator_user is defined and operator_user != ""
   ignore_errors: true
 
 - name: Ensure ~/.ssh directory exists for ansible user
@@ -37,6 +65,78 @@
     state: present
   when: lookup('file', lookup('env', 'HOME') + '/.ssh/ansible_controller.pub', errors='ignore') != ''
   ignore_errors: true
+
+- name: Check if host is TrueNAS SCALE (via midclt)
+  ansible.builtin.stat:
+    path: /usr/bin/midclt
+  register: midclt_stat
+
+- name: Ensure operator and CA persistence in TrueNAS SCALE configuration database
+  when: midclt_stat.stat.exists
+  block:
+    - name: Query TrueNAS middleware for operator user
+      ansible.builtin.command:
+        cmd: "/usr/bin/midclt call user.query '[[\"username\", \"=\", \"{{ operator_user }}\"]]'"
+      register: truenas_operator_query
+      changed_when: false
+      ignore_errors: true
+      when: operator_user is defined and operator_user != ""
+
+    - name: Create or update operator user in TrueNAS database
+      ansible.builtin.shell: |
+        EXISTING=$(python3 -c "import sys, json; data=json.loads(sys.argv[1]); print(data[0]['id'] if data else '')" '{{ truenas_operator_query.stdout }}' 2>/dev/null || true)
+        if [ -n "$EXISTING" ]; then
+          /usr/bin/midclt call user.update "$EXISTING" '{"sudo": true, "sudo_nopasswd": true}'
+        else
+          /usr/bin/midclt call user.create '{"username": "{{ operator_user }}", "full_name": "{{ operator_user }}", "shell": "/bin/bash", "sudo": true, "sudo_nopasswd": true, "group_create": true, "password_disabled": true}'
+        fi
+      when:
+        - operator_user is defined and operator_user != ""
+        - truenas_operator_query is defined
+        - truenas_operator_query.stdout is defined
+        - truenas_operator_query.stdout != ""
+      ignore_errors: true
+
+    - name: Query TrueNAS middleware for ansible service user
+      ansible.builtin.command:
+        cmd: "/usr/bin/midclt call user.query '[[\"username\", \"=\", \"ansible\"]]'"
+      register: truenas_ansible_query
+      changed_when: false
+      ignore_errors: true
+
+    - name: Ensure ansible service user in TrueNAS database has passwordless sudo
+      ansible.builtin.shell: |
+        ANSIBLE_ID=$(python3 -c "import sys, json; data=json.loads(sys.argv[1]); print(data[0]['id'] if data else '')" '{{ truenas_ansible_query.stdout }}' 2>/dev/null || true)
+        if [ -n "$ANSIBLE_ID" ]; then
+          /usr/bin/midclt call user.update "$ANSIBLE_ID" '{"sudo": true, "sudo_nopasswd": true}'
+        fi
+      when:
+        - truenas_ansible_query is defined
+        - truenas_ansible_query.stdout is defined
+        - truenas_ansible_query.stdout != ""
+      ignore_errors: true
+
+    - name: Ensure SSH CA parameters are registered in TrueNAS SSH service database
+      ansible.builtin.shell: |
+        python3 -c "
+        import subprocess, json
+        res = subprocess.run(['/usr/bin/midclt', 'call', 'ssh.config'], capture_output=True, text=True)
+        if res.returncode != 0:
+            exit(0)
+        cfg = json.loads(res.stdout)
+        current = cfg.get('auxiliary_parameters', '') or ''
+        ca_line = 'TrustedUserCAKeys {{ ssh_ca_keys_path }}'
+        krl_line = 'RevokedKeys {{ ssh_krl_path }}'
+        lines = [l.strip() for l in current.splitlines() if l.strip()]
+        if not any('TrustedUserCAKeys' in l for l in lines):
+            lines.append(ca_line)
+        if not any('RevokedKeys' in l for l in lines):
+            lines.append(krl_line)
+        new_aux = '\n'.join(lines)
+        if new_aux != current.strip():
+            subprocess.run(['/usr/bin/midclt', 'call', 'ssh.update', json.dumps({'auxiliary_parameters': new_aux})])
+        "
+      ignore_errors: true
 
 - name: Ensure /etc/ssh directory exists
   ansible.builtin.file:

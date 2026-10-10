@@ -23,3 +23,6 @@ sshd_config_dropin_path: "{{ sshd_config_dropin_dir }}/{{ sshd_config_dropin_fil
 # Default service name (overridden in OS-specific group vars)
 sshd_service_name: "ssh"
 supports_sshd_config_d: true
+
+# Operator account to provision across fleet for SSH CA login
+operator_user: "ablack"
