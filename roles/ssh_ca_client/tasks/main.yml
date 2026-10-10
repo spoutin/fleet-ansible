@@ -84,12 +84,30 @@
 
     - name: Create or update operator user in TrueNAS database
       ansible.builtin.shell: |
-        EXISTING=$(python3 -c "import sys, json; data=json.loads(sys.argv[1]); print(data[0]['id'] if data else '')" '{{ truenas_operator_query.stdout }}' 2>/dev/null || true)
-        if [ -n "$EXISTING" ]; then
-          /usr/bin/midclt call user.update "$EXISTING" '{"sudo": true, "sudo_nopasswd": true}'
-        else
-          /usr/bin/midclt call user.create '{"username": "{{ operator_user }}", "full_name": "{{ operator_user }}", "shell": "/bin/bash", "sudo": true, "sudo_nopasswd": true, "group_create": true, "password_disabled": true}'
-        fi
+        python3 -c "
+        import sys, json, subprocess
+        raw = sys.argv[1].strip()
+        users = json.loads(raw) if raw else []
+        if users:
+            u = users[0]
+            uid = u['id']
+            nopasswd = u.get('sudo_commands_nopasswd', [])
+            if 'ALL' not in nopasswd:
+                payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
+                subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(uid), payload], check=True)
+        else:
+            username = sys.argv[2]
+            payload = json.dumps({
+                'username': username,
+                'full_name': username,
+                'shell': '/bin/bash',
+                'sudo_commands': ['ALL'],
+                'sudo_commands_nopasswd': ['ALL'],
+                'group_create': True,
+                'password_disabled': True
+            })
+            subprocess.run(['/usr/bin/midclt', 'call', 'user.create', payload], check=True)
+        " '{{ truenas_operator_query.stdout }}' '{{ operator_user }}'
       when:
         - operator_user is defined and operator_user != ""
         - truenas_operator_query is defined
@@ -106,10 +124,18 @@
 
     - name: Ensure ansible service user in TrueNAS database has passwordless sudo
       ansible.builtin.shell: |
-        ANSIBLE_ID=$(python3 -c "import sys, json; data=json.loads(sys.argv[1]); print(data[0]['id'] if data else '')" '{{ truenas_ansible_query.stdout }}' 2>/dev/null || true)
-        if [ -n "$ANSIBLE_ID" ]; then
-          /usr/bin/midclt call user.update "$ANSIBLE_ID" '{"sudo": true, "sudo_nopasswd": true}'
-        fi
+        python3 -c "
+        import sys, json, subprocess
+        raw = sys.argv[1].strip()
+        users = json.loads(raw) if raw else []
+        if users:
+            u = users[0]
+            uid = u['id']
+            nopasswd = u.get('sudo_commands_nopasswd', [])
+            if 'ALL' not in nopasswd:
+                payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
+                subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(uid), payload], check=True)
+        " '{{ truenas_ansible_query.stdout }}'
       when:
         - truenas_ansible_query is defined
         - truenas_ansible_query.stdout is defined
