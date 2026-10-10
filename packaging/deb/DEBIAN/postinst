@@ -34,9 +34,10 @@ fi
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
 "$APP_DIR/.venv/bin/pip" install --quiet ansible-core
 
-# 3. Permissions
+# 3. Permissions & Cleanup
 chmod 755 "$APP_DIR/inventory/orangutan.py"
 chmod 755 /usr/local/bin/fleet-ansible 2>/dev/null || true
+rm -f "$APP_DIR/inventory/"*.dpkg-* 2>/dev/null || true
 
 # 4. Systemd configuration
 if command -v systemctl >/dev/null 2>&1; then

@@ -102,14 +102,14 @@
       id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || adduser -D -s /bin/sh {{ operator_user }} 2>/dev/null || true)
       echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
       {% endif %}
-      mkdir -p /etc/ssh/sshd_config.d
+      mkdir -p /etc/ssh/sshd_config.d /run/sshd
       echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
       echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
       echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
       if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
         (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true
       fi
-      (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)
+      ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)) || true
     "
   register: lxc_bootstrap_result
   changed_when: "'has no SSH server' not in lxc_bootstrap_result.stdout"
@@ -141,7 +141,7 @@
         mkdir -p /etc/sudoers.d && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible; \
         {% if operator_user | default('') %}id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || true); \
         mkdir -p /etc/sudoers.d && echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}; \
-        {% endif %}mkdir -p /etc/ssh/sshd_config.d && \
+        {% endif %}mkdir -p /etc/ssh/sshd_config.d /run/sshd && \
         echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && \
         chmod 644 /etc/ssh/trusted-user-ca-keys.pub && \
         echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && \
@@ -149,7 +149,7 @@
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true; fi; \
-        (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)"
+        ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true"
     else
       echo "Guest agent not available on VM {{ item }}, skipping to network SSH fallback."
     fi
@@ -166,12 +166,12 @@
     id -u {{ operator_user }} >/dev/null 2>&1 || useradd -m -s /bin/bash {{ operator_user }}
     mkdir -p /etc/sudoers.d && echo "{{ operator_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
     {% endif %}
-    mkdir -p /etc/ssh/sshd_config.d
+    mkdir -p /etc/ssh/sshd_config.d /run/sshd
     cp /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
     cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
     cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
     grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
-    (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)
+    ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
 
 - name: Remove temporary hypervisor staging files
   ansible.builtin.file:
