@@ -161,7 +161,11 @@
         new_aux = '\n'.join(lines)
         if new_aux != current.strip():
             subprocess.run(['/usr/bin/midclt', 'call', 'ssh.update', json.dumps({'auxiliary_parameters': new_aux})])
+            print('CHANGED')
         "
+      register: truenas_ssh_aux
+      changed_when: "'CHANGED' in truenas_ssh_aux.stdout"
+      notify: restart sshd
       ignore_errors: true
 
 - name: Ensure /etc/ssh directory exists
@@ -233,6 +237,7 @@
     owner: root
     group: root
     mode: '0644'
+  notify: restart sshd
 
 - name: Push OpenSSH KRL to host over SSH connection
   ansible.builtin.copy:
@@ -241,6 +246,7 @@
     owner: root
     group: root
     mode: '0644'
+  notify: restart sshd
 
 - name: Check if /etc/ssh/sshd_config.d is supported
   ansible.builtin.stat:
@@ -269,7 +275,7 @@
         insertbefore: BOF
         state: present
         validate: '/usr/sbin/sshd -t -f %s'
-      notify: reload sshd
+      notify: restart sshd
 
     - name: Deploy 60-pki-ssh-ca.conf drop-in
       ansible.builtin.template:
@@ -278,7 +284,7 @@
         owner: root
         group: root
         mode: '0644'
-      notify: reload sshd
+      notify: restart sshd
 
 - name: Configure sshd_config directly (for systems without drop-in directory)
   when: not (use_dropin | bool)
@@ -290,7 +296,7 @@
         line: "TrustedUserCAKeys {{ ssh_ca_keys_path }}"
         state: present
         validate: '/usr/sbin/sshd -t -f %s'
-      notify: reload sshd
+      notify: restart sshd
 
     - name: Configure RevokedKeys in sshd_config
       ansible.builtin.lineinfile:
@@ -299,4 +305,4 @@
         line: "RevokedKeys {{ ssh_krl_path }}"
         state: present
         validate: '/usr/sbin/sshd -t -f %s'
-      notify: reload sshd
+      notify: restart sshd

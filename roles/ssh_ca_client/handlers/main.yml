@@ -1,14 +1,16 @@
 ---
-- name: Validate and reload sshd
+- name: Validate sshd configuration
   ansible.builtin.command:
     cmd: /usr/sbin/sshd -t
   register: sshd_syntax_check
   changed_when: false
-  listen: "reload sshd"
-  notify: Reload ssh service
+  listen:
+    - "reload sshd"
+    - "restart sshd"
+  notify: Restart ssh service
 
-- name: Reload ssh service
+- name: Restart ssh service
   ansible.builtin.service:
     name: "{{ sshd_service_name }}"
-    state: reloaded
-  listen: "Reload ssh service"
+    state: restarted
+  listen: "Restart ssh service"
