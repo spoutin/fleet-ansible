@@ -85,44 +85,32 @@
 - name: Inject SSH CA into running LXC containers
   loop: "{{ pct_running.stdout_lines | default([]) }}"
   ansible.builtin.shell: |
-    # Check if container has an SSH server installed
-    if ! pct exec {{ item }} -- sh -c 'test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1'; then
+    if ! pct exec {{ item }} -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1"; then
       echo "Container {{ item }} has no SSH server installed, skipping."
       exit 0
     fi
 
-    # Ensure sudo is installed
-    pct exec {{ item }} -- sh -c 'which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo || apk add sudo || dnf install -y sudo || yum install -y sudo || true)'
+    CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
+    CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
+    KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
 
-    # Create ansible user if missing
-    pct exec {{ item }} -- sh -c 'id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || adduser -D -s /bin/sh ansible 2>/dev/null || true)'
-
-    # Configure passwordless sudo for ansible user
-    pct exec {{ item }} -- sh -c 'mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible'
-
-    # Create operator user if configured
-    {% if operator_user | default('') %}
-    pct exec {{ item }} -- sh -c 'id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || adduser -D -s /bin/sh {{ operator_user }} 2>/dev/null || true)'
-    pct exec {{ item }} -- sh -c 'mkdir -p /etc/sudoers.d && echo "{{ operator_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}'
-    {% endif %}
-
-    # Ensure /etc/ssh and drop-in dir exist inside the LXC
-    pct exec {{ item }} -- mkdir -p /etc/ssh/sshd_config.d
-    
-    # Push the CA public key
-    pct push {{ item }} /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub -perms 644
-    
-    # Push the KRL
-    pct push {{ item }} /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl -perms 644
-
-    # Push the sshd drop-in configuration
-    pct push {{ item }} /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf -perms 644
-    
-    # Ensure Include directive is present in /etc/ssh/sshd_config if missing
-    pct exec {{ item }} -- sh -c 'grep -q "Include /etc/ssh/sshd_config.d/\*\.conf" /etc/ssh/sshd_config || sed -i "1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|" /etc/ssh/sshd_config'
-    
-    # Validate configuration and restart/reload sshd safely
-    pct exec {{ item }} -- sh -c '(/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)'
+    pct exec {{ item }} -- /bin/sh -c "
+      id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || adduser -D -s /bin/sh ansible 2>/dev/null || true)
+      mkdir -p /etc/sudoers.d
+      echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+      {% if operator_user | default('') %}
+      id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || adduser -D -s /bin/sh {{ operator_user }} 2>/dev/null || true)
+      echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
+      {% endif %}
+      mkdir -p /etc/ssh/sshd_config.d
+      echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+      echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
+      echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+      if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
+        (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true
+      fi
+      (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)
+    "
   register: lxc_bootstrap_result
   changed_when: "'has no SSH server' not in lxc_bootstrap_result.stdout"
   ignore_errors: true
@@ -147,8 +135,8 @@
       CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
       CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
       KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
-      
-      qm guest exec {{ item }} -- /bin/sh -c "which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo || dnf install -y sudo || true); \
+
+      qm guest exec {{ item }} -- /bin/sh -c "
         id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || true); \
         mkdir -p /etc/sudoers.d && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible; \
         {% if operator_user | default('') %}id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || true); \
@@ -160,7 +148,7 @@
         chmod 644 /etc/ssh/revoked-keys.krl && \
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
-        (grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config) && \
+        if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true; fi; \
         (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)"
     else
       echo "Guest agent not available on VM {{ item }}, skipping to network SSH fallback."
