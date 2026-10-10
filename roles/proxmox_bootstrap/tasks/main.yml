@@ -4,44 +4,77 @@
 # LXC containers (via `pct push`/`pct exec`) and QEMU VMs (via `qm guest exec`).
 # This achieves 100% zero-SSH, passwordless bootstrapping for virtualized guests!
 
-- name: Download SSH CA public key to hypervisor staging directory
-  ansible.builtin.get_url:
-    url: "{{ ssh_ca_public_key_url }}"
-    dest: /tmp/pki-trusted-ca.pub
-    mode: '0644'
-    validate_certs: false
-  register: pve_dl_ca
-  ignore_errors: true
+- name: Stage SSH CA credentials and KRL on Ansible controller
+  delegate_to: localhost
+  run_once: true
+  become: false
+  block:
+    - name: Fetch SSH CA public key from PKI or OpenBao to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_ca_public_key_url }}"
+        dest: /tmp/fleet_ca_public_key.pub
+        mode: '0644'
+        validate_certs: false
+      register: controller_dl_ca
+      ignore_errors: true
 
-- name: Fallback download SSH CA key from OpenBao directly
-  ansible.builtin.get_url:
-    url: "{{ ssh_ca_fallback_url }}"
+    - name: Fallback fetch SSH CA public key from OpenBao directly to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_ca_fallback_url }}"
+        dest: /tmp/fleet_ca_public_key.pub
+        mode: '0644'
+        validate_certs: false
+      when: controller_dl_ca is failed
+      ignore_errors: true
+
+    - name: Fetch OpenSSH Key Revocation List (KRL) to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_krl_url }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+        validate_certs: false
+      register: controller_dl_krl
+      ignore_errors: true
+
+    - name: Fallback fetch OpenSSH KRL to controller
+      ansible.builtin.get_url:
+        url: "{{ ssh_krl_fallback_url }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+        validate_certs: false
+      when: controller_dl_krl is failed
+      register: controller_dl_krl_fallback
+      ignore_errors: true
+
+    - name: Check if KRL was staged on controller
+      ansible.builtin.stat:
+        path: /tmp/fleet_revoked_keys.krl
+      register: controller_krl_stat
+
+    - name: Initialize safe empty KRL on controller if absent
+      ansible.builtin.copy:
+        content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
+        dest: /tmp/fleet_revoked_keys.krl
+        mode: '0644'
+      when: not controller_krl_stat.stat.exists or controller_krl_stat.stat.size == 0
+
+- name: Push SSH CA public key to hypervisor staging directory
+  ansible.builtin.copy:
+    src: /tmp/fleet_ca_public_key.pub
     dest: /tmp/pki-trusted-ca.pub
     mode: '0644'
-    validate_certs: false
-  when: pve_dl_ca is failed
+
+- name: Push OpenSSH KRL to hypervisor staging directory
+  ansible.builtin.copy:
+    src: /tmp/fleet_revoked_keys.krl
+    dest: /tmp/revoked-keys.krl
+    mode: '0644'
 
 - name: Stage 60-pki-ssh-ca.conf template on hypervisor
   ansible.builtin.template:
     src: 60-pki-ssh-ca.conf.j2
     dest: /tmp/60-pki-ssh-ca.conf
     mode: '0644'
-
-- name: Download OpenSSH KRL to hypervisor staging directory
-  ansible.builtin.get_url:
-    url: "{{ ssh_krl_url }}"
-    dest: /tmp/revoked-keys.krl
-    mode: '0644'
-    validate_certs: false
-  register: pve_dl_krl
-  ignore_errors: true
-
-- name: Initialize safe empty KRL on hypervisor if download failed
-  ansible.builtin.copy:
-    content: "{{ 'U1NIS1JMCgAAAAABAAAAAAAAAAAAAAAAasjsugAAAAAAAAAAAAAAAAAAAAA=' | b64decode }}"
-    dest: /tmp/revoked-keys.krl
-    mode: '0644'
-  when: pve_dl_krl is failed or not pve_dl_krl.dest is defined
 
 - name: Discover running LXC container IDs on hypervisor
   ansible.builtin.shell: |
@@ -88,8 +121,8 @@
     # Ensure Include directive is present in /etc/ssh/sshd_config if missing
     pct exec {{ item }} -- sh -c 'grep -q "Include /etc/ssh/sshd_config.d/\*\.conf" /etc/ssh/sshd_config || sed -i "1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|" /etc/ssh/sshd_config'
     
-    # Validate configuration and reload sshd safely
-    pct exec {{ item }} -- sh -c '(/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || rc-service sshd reload 2>/dev/null || true)'
+    # Validate configuration and restart/reload sshd safely
+    pct exec {{ item }} -- sh -c '(/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)'
   register: lxc_bootstrap_result
   changed_when: "'has no SSH server' not in lxc_bootstrap_result.stdout"
   ignore_errors: true
@@ -128,7 +161,7 @@
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
         (grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config) && \
-        (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)"
+        (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)"
     else
       echo "Guest agent not available on VM {{ item }}, skipping to network SSH fallback."
     fi
@@ -150,7 +183,7 @@
     cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
     cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
     grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
-    /usr/sbin/sshd -t && systemctl reload ssh
+    (/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)
 
 - name: Remove temporary hypervisor staging files
   ansible.builtin.file:
