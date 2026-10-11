@@ -86,7 +86,6 @@
   loop: "{{ pct_running.stdout_lines | default([]) }}"
   ansible.builtin.shell: |
     if ! pct exec {{ item }} -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1"; then
-      echo "Container {{ item }} has no SSH server installed, skipping."
       exit 0
     fi
 
@@ -95,24 +94,51 @@
     KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
 
     pct exec {{ item }} -- /bin/sh -c "
-      id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || adduser -D -s /bin/sh ansible 2>/dev/null || true)
-      mkdir -p /etc/sudoers.d
-      echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+      CHANGED=0
+      if ! id -u ansible >/dev/null 2>&1; then
+        (useradd -m -s /bin/bash ansible 2>/dev/null || adduser -D -s /bin/sh ansible 2>/dev/null || true)
+        CHANGED=1
+      fi
+      if [ ! -f /etc/sudoers.d/ansible ]; then
+        mkdir -p /etc/sudoers.d
+        echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+        CHANGED=1
+      fi
       {% if operator_user | default('') %}
-      id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || adduser -D -s /bin/sh {{ operator_user }} 2>/dev/null || true)
-      echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
+      if ! id -u {{ operator_user }} >/dev/null 2>&1; then
+        (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || adduser -D -s /bin/sh {{ operator_user }} 2>/dev/null || true)
+        CHANGED=1
+      fi
+      if [ ! -f /etc/sudoers.d/{{ operator_user }} ]; then
+        mkdir -p /etc/sudoers.d
+        echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
+        CHANGED=1
+      fi
       {% endif %}
       mkdir -p /etc/ssh/sshd_config.d /run/sshd
-      echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
-      echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
-      echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+      if [ ! -f /etc/ssh/trusted-user-ca-keys.pub ] || [ \"\$(cat /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null)\" != \"\$CA_CONTENT\" ]; then
+        echo \"\$CA_CONTENT\" > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+        CHANGED=1
+      fi
+      if [ ! -f /etc/ssh/revoked-keys.krl ] || [ \"\$(base64 -w 0 /etc/ssh/revoked-keys.krl 2>/dev/null || base64 /etc/ssh/revoked-keys.krl 2>/dev/null)\" != \"\$KRL_BASE64\" ]; then
+        echo \"\$KRL_BASE64\" | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
+        CHANGED=1
+      fi
+      if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || [ \"\$(cat /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null)\" != \"\$CONF_CONTENT\" ]; then
+        echo \"\$CONF_CONTENT\" > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+        CHANGED=1
+      fi
       if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
         (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true
+        CHANGED=1
       fi
-      ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)) || true
+      if [ \"\$CHANGED\" -eq 1 ]; then
+        ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || rc-service sshd restart 2>/dev/null || systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true)) || true
+        echo 'CHANGED'
+      fi
     "
   register: lxc_bootstrap_result
-  changed_when: "'has no SSH server' not in lxc_bootstrap_result.stdout"
+  changed_when: "'CHANGED' in lxc_bootstrap_result.stdout"
   ignore_errors: true
 
 - name: Discover running QEMU VM IDs on hypervisor
@@ -126,9 +152,7 @@
   ansible.builtin.shell: |
     # Test if guest agent is active
     if qm guest cmd {{ item }} ping 2>/dev/null; then
-      # Check if VM has an SSH server installed
       if ! qm guest exec {{ item }} -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1"; then
-        echo "VM {{ item }} has no SSH server installed, skipping."
         exit 0
       fi
 
@@ -137,47 +161,85 @@
       KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
 
       qm guest exec {{ item }} -- /bin/sh -c "
-        id -u ansible >/dev/null 2>&1 || (useradd -m -s /bin/bash ansible 2>/dev/null || true); \
-        mkdir -p /etc/sudoers.d && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible; \
-        {% if operator_user | default('') %}id -u {{ operator_user }} >/dev/null 2>&1 || (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || true); \
-        mkdir -p /etc/sudoers.d && echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}; \
-        {% endif %}mkdir -p /etc/ssh/sshd_config.d /run/sshd && \
-        echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && \
-        chmod 644 /etc/ssh/trusted-user-ca-keys.pub && \
-        echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && \
-        chmod 644 /etc/ssh/revoked-keys.krl && \
-        echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
-        chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && \
-        if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true; fi; \
-        ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true"
-    else
-      echo "Guest agent not available on VM {{ item }}, skipping to network SSH fallback."
+        CHANGED=0
+        if ! id -u ansible >/dev/null 2>&1; then
+          (useradd -m -s /bin/bash ansible 2>/dev/null || true); CHANGED=1
+        fi
+        if [ ! -f /etc/sudoers.d/ansible ]; then
+          mkdir -p /etc/sudoers.d && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible; CHANGED=1
+        fi
+        {% if operator_user | default('') %}
+        if ! id -u {{ operator_user }} >/dev/null 2>&1; then
+          (useradd -m -s /bin/bash {{ operator_user }} 2>/dev/null || true); CHANGED=1
+        fi
+        if [ ! -f /etc/sudoers.d/{{ operator_user }} ]; then
+          mkdir -p /etc/sudoers.d && echo '{{ operator_user }} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}; CHANGED=1
+        fi
+        {% endif %}
+        mkdir -p /etc/ssh/sshd_config.d /run/sshd
+        if [ ! -f /etc/ssh/trusted-user-ca-keys.pub ] || [ \"\$(cat /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null)\" != \"\$CA_CONTENT\" ]; then
+          echo \"\$CA_CONTENT\" > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub; CHANGED=1
+        fi
+        if [ ! -f /etc/ssh/revoked-keys.krl ] || [ \"\$(base64 -w 0 /etc/ssh/revoked-keys.krl 2>/dev/null || base64 /etc/ssh/revoked-keys.krl 2>/dev/null)\" != \"\$KRL_BASE64\" ]; then
+          echo \"\$KRL_BASE64\" | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl; CHANGED=1
+        fi
+        if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || [ \"\$(cat /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null)\" != \"\$CONF_CONTENT\" ]; then
+          echo \"\$CONF_CONTENT\" > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; CHANGED=1
+        fi
+        if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
+          (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true; CHANGED=1
+        fi
+        if [ \"\$CHANGED\" -eq 1 ]; then
+          ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
+          echo 'CHANGED'
+        fi"
     fi
   register: qm_bootstrap_result
-  changed_when: "'Guest agent not available' not in qm_bootstrap_result.stdout and 'has no SSH server' not in qm_bootstrap_result.stdout"
+  changed_when: "'CHANGED' in qm_bootstrap_result.stdout"
   ignore_errors: true
 
 - name: Ensure ansible user and SSH CA trust are configured on hypervisor itself
   ansible.builtin.shell: |
-    which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo)
-    id -u ansible >/dev/null 2>&1 || useradd -m -s /bin/bash ansible
-    mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+    CHANGED=0
+    which sudo >/dev/null 2>&1 || (apt-get update && apt-get install -y sudo && CHANGED=1)
+    if ! id -u ansible >/dev/null 2>&1; then
+      useradd -m -s /bin/bash ansible
+      CHANGED=1
+    fi
+    if [ ! -f /etc/sudoers.d/ansible ]; then
+      mkdir -p /etc/sudoers.d && echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && chmod 0440 /etc/sudoers.d/ansible
+      CHANGED=1
+    fi
     {% if operator_user | default('') %}
-    id -u {{ operator_user }} >/dev/null 2>&1 || useradd -m -s /bin/bash {{ operator_user }}
-    mkdir -p /etc/sudoers.d && echo "{{ operator_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
+    if ! id -u {{ operator_user }} >/dev/null 2>&1; then
+      useradd -m -s /bin/bash {{ operator_user }}
+      CHANGED=1
+    fi
+    if [ ! -f /etc/sudoers.d/{{ operator_user }} ]; then
+      mkdir -p /etc/sudoers.d && echo "{{ operator_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ operator_user }} && chmod 0440 /etc/sudoers.d/{{ operator_user }}
+      CHANGED=1
+    fi
     {% endif %}
     mkdir -p /etc/ssh/sshd_config.d /run/sshd
-    cp /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
-    cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
-    cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
-    grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config || sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
-    ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
-
-- name: Remove temporary hypervisor staging files
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /tmp/pki-trusted-ca.pub
-    - /tmp/revoked-keys.krl
-    - /tmp/60-pki-ssh-ca.conf
+    if ! cmp -s /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub; then
+      cp /tmp/pki-trusted-ca.pub /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+      CHANGED=1
+    fi
+    if ! cmp -s /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl; then
+      cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
+      CHANGED=1
+    fi
+    if ! cmp -s /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; then
+      cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+      CHANGED=1
+    fi
+    if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
+      sed -i '1s|^|Include /etc/ssh/sshd_config.d/*.conf\n|' /etc/ssh/sshd_config
+      CHANGED=1
+    fi
+    if [ "$CHANGED" -eq 1 ]; then
+      ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
+      echo "CHANGED"
+    fi
+  register: hypervisor_bootstrap_result
+  changed_when: "'CHANGED' in hypervisor_bootstrap_result.stdout"
