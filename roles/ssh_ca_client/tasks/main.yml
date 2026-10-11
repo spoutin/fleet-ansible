@@ -17,10 +17,14 @@
 
 - name: Configure passwordless sudo for ansible user
   ansible.builtin.shell: |
-    mkdir -p /etc/sudoers.d && \
-    echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && \
-    chmod 0440 /etc/sudoers.d/ansible && \
-    /usr/sbin/visudo -cf /etc/sudoers.d/ansible 2>/dev/null || true
+    CHANGED=0
+    if [ ! -f /etc/sudoers.d/ansible ] || [ "$(cat /etc/sudoers.d/ansible 2>/dev/null)" != "ansible ALL=(ALL) NOPASSWD:ALL" ]; then
+      mkdir -p /etc/sudoers.d && \
+      echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible && \
+      chmod 0440 /etc/sudoers.d/ansible && \
+      /usr/sbin/visudo -cf /etc/sudoers.d/ansible 2>/dev/null || true
+      CHANGED=1
+    fi
     if [ -x /usr/bin/midclt ]; then
       python3 -c "
       import subprocess, json
@@ -32,13 +36,23 @@
               if 'ALL' not in u.get('sudo_commands_nopasswd', []):
                   payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
                   subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(u['id']), payload])
-      " 2>/dev/null || true
+                  print('CHANGED')
+      " 2>/dev/null | grep -q 'CHANGED' && CHANGED=1 || true
     fi
+    if [ "$CHANGED" -eq 1 ]; then
+      echo "CHANGED"
+    fi
+  register: ansible_sudo_result
+  changed_when: "'CHANGED' in ansible_sudo_result.stdout"
   ignore_errors: true
 
 - name: Ensure operator user exists
   ansible.builtin.shell: |
-    id -u "{{ operator_user }}" >/dev/null 2>&1 || (useradd -m -s /bin/bash "{{ operator_user }}" 2>/dev/null || adduser -D -s /bin/sh "{{ operator_user }}" 2>/dev/null || true)
+    CHANGED=0
+    if ! id -u "{{ operator_user }}" >/dev/null 2>&1; then
+      (useradd -m -s /bin/bash "{{ operator_user }}" 2>/dev/null || adduser -D -s /bin/sh "{{ operator_user }}" 2>/dev/null || true)
+      CHANGED=1
+    fi
     if [ -x /usr/bin/midclt ]; then
       python3 -c "
       import subprocess, json
@@ -50,6 +64,7 @@
               if 'ALL' not in u.get('sudo_commands_nopasswd', []):
                   payload = json.dumps({'sudo_commands': ['ALL'], 'sudo_commands_nopasswd': ['ALL']})
                   subprocess.run(['/usr/bin/midclt', 'call', 'user.update', str(u['id']), payload])
+                  print('CHANGED')
           else:
               payload = json.dumps({
                   'username': '{{ operator_user }}',
@@ -61,8 +76,14 @@
                   'password_disabled': True
               })
               subprocess.run(['/usr/bin/midclt', 'call', 'user.create', payload])
-      " 2>/dev/null || true
+              print('CHANGED')
+      " 2>/dev/null | grep -q 'CHANGED' && CHANGED=1 || true
     fi
+    if [ "$CHANGED" -eq 1 ]; then
+      echo "CHANGED"
+    fi
+  register: operator_user_result
+  changed_when: "'CHANGED' in operator_user_result.stdout"
   when: operator_user is defined and operator_user != ""
   ignore_errors: true
 

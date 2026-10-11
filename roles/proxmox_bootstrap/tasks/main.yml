@@ -78,17 +78,17 @@
 
 - name: Discover running LXC container IDs on hypervisor
   ansible.builtin.shell: |
-    pct list 2>/dev/null | awk '$2=="running" {print $1}'
+    for id in $(pct list 2>/dev/null | awk '$2=="running" {print $1}'); do
+      if pct exec "$id" -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1" 2>/dev/null; then
+        echo "$id"
+      fi
+    done
   register: pct_running
   changed_when: false
 
 - name: Inject SSH CA into running LXC containers
   loop: "{{ pct_running.stdout_lines | default([]) }}"
   ansible.builtin.shell: |
-    if ! pct exec {{ item }} -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1"; then
-      exit 0
-    fi
-
     CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
     CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
     KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
@@ -148,27 +148,27 @@
 
 - name: Discover running QEMU VM IDs on hypervisor
   ansible.builtin.shell: |
-    qm list 2>/dev/null | awk '$3=="running" {print $1}'
+    for id in $(qm list 2>/dev/null | awk '$3=="running" {print $1}'); do
+      if qm guest cmd "$id" ping 2>/dev/null; then
+        if qm guest exec "$id" -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1" 2>/dev/null | grep -q '"exitcode" : 0'; then
+          echo "$id"
+        fi
+      fi
+    done
   register: qm_running
   changed_when: false
 
 - name: Inject SSH CA into QEMU VMs with active guest agent
   loop: "{{ qm_running.stdout_lines | default([]) }}"
   ansible.builtin.shell: |
-    # Test if guest agent is active
-    if qm guest cmd {{ item }} ping 2>/dev/null; then
-      if ! qm guest exec {{ item }} -- /bin/sh -c "test -f /etc/ssh/sshd_config || which sshd >/dev/null 2>&1"; then
-        exit 0
-      fi
+    CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
+    CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
+    KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
+    CA_HASH=$(sha256sum /tmp/pki-trusted-ca.pub 2>/dev/null | awk '{print $1}')
+    KRL_HASH=$(sha256sum /tmp/revoked-keys.krl 2>/dev/null | awk '{print $1}')
+    CONF_HASH=$(sha256sum /tmp/60-pki-ssh-ca.conf 2>/dev/null | awk '{print $1}')
 
-      CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
-      CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
-      KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
-      CA_HASH=$(sha256sum /tmp/pki-trusted-ca.pub 2>/dev/null | awk '{print $1}')
-      KRL_HASH=$(sha256sum /tmp/revoked-keys.krl 2>/dev/null | awk '{print $1}')
-      CONF_HASH=$(sha256sum /tmp/60-pki-ssh-ca.conf 2>/dev/null | awk '{print $1}')
-
-      qm guest exec {{ item }} -- /bin/sh -c "
+    qm guest exec {{ item }} -- /bin/sh -c "
         CHANGED=0
         if ! id -u ansible >/dev/null 2>&1; then
           (useradd -m -s /bin/bash ansible 2>/dev/null || true); CHANGED=1
@@ -203,7 +203,6 @@
           ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
           echo 'CHANGED'
         fi"
-    fi
   register: qm_bootstrap_result
   changed_when: "'CHANGED' in qm_bootstrap_result.stdout"
   ignore_errors: true
@@ -250,7 +249,7 @@
       CHANGED=1
     fi
     if [ "$CHANGED" -eq 1 ]; then
-      ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl restart ssh.socket 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true)) || true
+      ((/usr/sbin/sshd -t 2>/dev/null || sshd -t 2>/dev/null) && (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || systemctl restart ssh.socket 2>/dev/null || true)) || true
       echo "CHANGED"
     fi
   register: hypervisor_bootstrap_result
