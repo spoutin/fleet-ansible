@@ -92,6 +92,9 @@
     CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
     CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
     KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
+    CA_HASH=$(sha256sum /tmp/pki-trusted-ca.pub 2>/dev/null | awk '{print $1}')
+    KRL_HASH=$(sha256sum /tmp/revoked-keys.krl 2>/dev/null | awk '{print $1}')
+    CONF_HASH=$(sha256sum /tmp/60-pki-ssh-ca.conf 2>/dev/null | awk '{print $1}')
 
     pct exec {{ item }} -- /bin/sh -c "
       CHANGED=0
@@ -116,16 +119,16 @@
       fi
       {% endif %}
       mkdir -p /etc/ssh/sshd_config.d /run/sshd
-      if [ ! -f /etc/ssh/trusted-user-ca-keys.pub ] || [ \"\$(cat /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null)\" != \"\$CA_CONTENT\" ]; then
-        echo \"\$CA_CONTENT\" > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
+      if [ \"\$(sha256sum /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null | awk '{print \$1}')\" != \"$CA_HASH\" ]; then
+        echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub
         CHANGED=1
       fi
-      if [ ! -f /etc/ssh/revoked-keys.krl ] || [ \"\$(base64 -w 0 /etc/ssh/revoked-keys.krl 2>/dev/null || base64 /etc/ssh/revoked-keys.krl 2>/dev/null)\" != \"\$KRL_BASE64\" ]; then
-        echo \"\$KRL_BASE64\" | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
+      if [ \"\$(sha256sum /etc/ssh/revoked-keys.krl 2>/dev/null | awk '{print \$1}')\" != \"$KRL_HASH\" ]; then
+        echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
         CHANGED=1
       fi
-      if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || [ \"\$(cat /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null)\" != \"\$CONF_CONTENT\" ]; then
-        echo \"\$CONF_CONTENT\" > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
+      if [ \"\$(sha256sum /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null | awk '{print \$1}')\" != \"$CONF_HASH\" ]; then
+        echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
         CHANGED=1
       fi
       if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
@@ -159,6 +162,9 @@
       CA_CONTENT=$(cat /tmp/pki-trusted-ca.pub)
       CONF_CONTENT=$(cat /tmp/60-pki-ssh-ca.conf)
       KRL_BASE64=$(base64 -w 0 /tmp/revoked-keys.krl 2>/dev/null || base64 /tmp/revoked-keys.krl)
+      CA_HASH=$(sha256sum /tmp/pki-trusted-ca.pub 2>/dev/null | awk '{print $1}')
+      KRL_HASH=$(sha256sum /tmp/revoked-keys.krl 2>/dev/null | awk '{print $1}')
+      CONF_HASH=$(sha256sum /tmp/60-pki-ssh-ca.conf 2>/dev/null | awk '{print $1}')
 
       qm guest exec {{ item }} -- /bin/sh -c "
         CHANGED=0
@@ -177,14 +183,14 @@
         fi
         {% endif %}
         mkdir -p /etc/ssh/sshd_config.d /run/sshd
-        if [ ! -f /etc/ssh/trusted-user-ca-keys.pub ] || [ \"\$(cat /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null)\" != \"\$CA_CONTENT\" ]; then
-          echo \"\$CA_CONTENT\" > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub; CHANGED=1
+        if [ \"\$(sha256sum /etc/ssh/trusted-user-ca-keys.pub 2>/dev/null | awk '{print \$1}')\" != \"$CA_HASH\" ]; then
+          echo '$CA_CONTENT' > /etc/ssh/trusted-user-ca-keys.pub && chmod 644 /etc/ssh/trusted-user-ca-keys.pub; CHANGED=1
         fi
-        if [ ! -f /etc/ssh/revoked-keys.krl ] || [ \"\$(base64 -w 0 /etc/ssh/revoked-keys.krl 2>/dev/null || base64 /etc/ssh/revoked-keys.krl 2>/dev/null)\" != \"\$KRL_BASE64\" ]; then
-          echo \"\$KRL_BASE64\" | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl; CHANGED=1
+        if [ \"\$(sha256sum /etc/ssh/revoked-keys.krl 2>/dev/null | awk '{print \$1}')\" != \"$KRL_HASH\" ]; then
+          echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl; CHANGED=1
         fi
-        if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || [ \"\$(cat /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null)\" != \"\$CONF_CONTENT\" ]; then
-          echo \"\$CONF_CONTENT\" > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; CHANGED=1
+        if [ \"\$(sha256sum /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null | awk '{print \$1}')\" != \"$CONF_HASH\" ]; then
+          echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; CHANGED=1
         fi
         if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
           (echo 'Include /etc/ssh/sshd_config.d/*.conf'; cat /etc/ssh/sshd_config 2>/dev/null) > /tmp/sshd_config.tmp && mv /tmp/sshd_config.tmp /etc/ssh/sshd_config 2>/dev/null || true; CHANGED=1
