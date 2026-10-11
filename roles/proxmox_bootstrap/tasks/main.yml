@@ -127,7 +127,9 @@
         echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
         CHANGED=1
       fi
-      if [ \"\$(sha256sum /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null | awk '{print \$1}')\" != \"$CONF_HASH\" ]; then
+      if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || \
+         ! grep -q '^TrustedUserCAKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null || \
+         ! grep -q '^RevokedKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null; then
         echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
         CHANGED=1
       fi
@@ -189,7 +191,9 @@
         if [ \"\$(sha256sum /etc/ssh/revoked-keys.krl 2>/dev/null | awk '{print \$1}')\" != \"$KRL_HASH\" ]; then
           echo '$KRL_BASE64' | base64 -d > /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl; CHANGED=1
         fi
-        if [ \"\$(sha256sum /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null | awk '{print \$1}')\" != \"$CONF_HASH\" ]; then
+        if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || \
+           ! grep -q '^TrustedUserCAKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null || \
+           ! grep -q '^RevokedKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null; then
           echo '$CONF_CONTENT' > /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; CHANGED=1
         fi
         if ! grep -q 'Include /etc/ssh/sshd_config.d/\*.conf' /etc/ssh/sshd_config 2>/dev/null; then
@@ -235,7 +239,9 @@
       cp /tmp/revoked-keys.krl /etc/ssh/revoked-keys.krl && chmod 644 /etc/ssh/revoked-keys.krl
       CHANGED=1
     fi
-    if ! cmp -s /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf; then
+    if [ ! -f /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf ] || \
+       ! grep -q '^TrustedUserCAKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null || \
+       ! grep -q '^RevokedKeys' /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf 2>/dev/null; then
       cp /tmp/60-pki-ssh-ca.conf /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf && chmod 644 /etc/ssh/sshd_config.d/60-pki-ssh-ca.conf
       CHANGED=1
     fi
