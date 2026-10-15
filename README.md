@@ -120,7 +120,38 @@ ansible-playbook playbooks/bootstrap.yml
 ```
 
 ### 5. Routine Maintenance
-To update or verify CA trust across all managed hosts:
+To update or verify CA trust across all managed hosts manually:
 ```bash
 fleet-ansible install-pki
+```
+
+---
+
+## Automated Background Sync (Systemd Timers)
+
+When installed via the Debian package (`.deb`), `fleet-ansible` automatically enables and manages scheduled synchronization across the fleet using systemd timers:
+
+### 1. Fleet CA Trust & KRL Sync (`fleet-ansible.timer`)
+- **Service:** `fleet-ansible.service`
+- **Schedule:** Periodic (`OnCalendar=hourly` / daily with `RandomizedDelaySec=300`)
+- **Action:** Executes `/usr/local/bin/fleet-ansible install-pki`.
+- **Purpose:** Automatically fetches the latest OpenSSH Key Revocation List (KRL) from Spoutin PKI (`https://wifi.int.spoutin.org/ssh-krl`) and pushes `/etc/ssh/revoked-keys.krl` across all managed servers so revoked certificates are blocked fleet-wide.
+
+### 2. Controller Certificate Auto-Renewal (`fleet-ansible-renew-cert.timer`)
+- **Service:** `fleet-ansible-renew-cert.service`
+- **Schedule:** Monthly (`OnCalendar=monthly` with `RandomizedDelaySec=3600`)
+- **Action:** Executes `/usr/local/bin/fleet-ansible enroll`.
+- **Purpose:** Automatically requests a fresh 1-year SSH certificate for the Ansible controller key from OpenBao CA before the current certificate expires, ensuring unbroken zero-password automation.
+
+### Inspecting Timers & Execution Logs
+```bash
+# Check scheduled timer execution times
+systemctl list-timers | grep fleet-ansible
+
+# Check status of the timer units
+systemctl status fleet-ansible.timer
+systemctl status fleet-ansible-renew-cert.timer
+
+# View sync execution logs
+journalctl -u fleet-ansible.service -n 50 --no-pager
 ```
