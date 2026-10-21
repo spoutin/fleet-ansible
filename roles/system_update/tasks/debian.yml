@@ -4,6 +4,10 @@
     update_cache: true
     cache_valid_time: 0
     upgrade: "dist"
+    dpkg_options: "force-confdef,force-confold"
+
+- name: Autoremove unused packages and clean apt cache
+  ansible.builtin.apt:
     autoremove: true
     autoclean: true
 

@@ -11,5 +11,10 @@
   ansible.builtin.include_tasks: redhat.yml
   when: ansible_os_family == 'RedHat'
 
+- name: Notify if operating system family is unsupported
+  ansible.builtin.debug:
+    msg: "Warning: Operating system family '{{ ansible_os_family | default('unknown') }}' on {{ inventory_hostname }} is not supported by system_update."
+  when: ansible_os_family not in ['Debian', 'Alpine', 'RedHat']
+
 - name: Handle reboot workflow
   ansible.builtin.include_tasks: reboot.yml

@@ -18,14 +18,28 @@
 
 - name: Check latest installed kernel on Alpine
   ansible.builtin.shell: |
-    if [ -d /lib/modules ]; then
-      ls -1v /lib/modules 2>/dev/null | tail -n 1
+    latest="$(ls -1v /lib/modules 2>/dev/null | tail -n 1)"
+    if [ -n "$latest" ]; then
+      echo "$latest"
     else
       echo "{{ alpine_running_kernel.stdout.strip() }}"
     fi
   register: alpine_installed_kernel
   changed_when: false
 
+- name: Determine if Alpine host is a container
+  ansible.builtin.set_fact:
+    is_alpine_container: >-
+      {{
+        (ansible_virtualization_role | default('') == 'guest') and
+        (ansible_virtualization_type | default('') in ['lxc', 'docker', 'container', 'podman'])
+      }}
+
 - name: Set system_reboot_required fact for Alpine
   ansible.builtin.set_fact:
-    system_reboot_required: "{{ alpine_running_kernel.stdout.strip() != alpine_installed_kernel.stdout.strip() }}"
+    system_reboot_required: >-
+      {{
+        (not is_alpine_container | bool) and
+        (apk_upgrade_result.changed | default(false) | bool) and
+        (alpine_running_kernel.stdout.strip() != alpine_installed_kernel.stdout.strip())
+      }}
