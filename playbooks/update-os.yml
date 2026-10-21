@@ -1,0 +1,10 @@
+---
+# Fleet Operating System Routine Update Playbook
+# Applies package upgrades and manages required reboots safely across the fleet
+
+- name: Update Operating System Packages Across Fleet
+  hosts: "{{ update_target | default('managed_hosts:all:!hypervisors') }}"
+  gather_facts: true
+  become: true
+  roles:
+    - system_update
