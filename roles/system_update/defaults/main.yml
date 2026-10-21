@@ -1,0 +1,5 @@
+---
+# Defaults for system_update role
+reboot_mode: "prompt"  # prompt | always | never
+reboot_timeout: 300
+system_reboot_required: false

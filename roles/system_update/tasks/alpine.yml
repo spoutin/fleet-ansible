@@ -1,0 +1,31 @@
+---
+- name: Update apk repository indexes
+  ansible.builtin.command:
+    cmd: apk update
+  changed_when: false
+
+- name: Upgrade installed packages on Alpine
+  ansible.builtin.command:
+    cmd: apk upgrade -a
+  register: apk_upgrade_result
+  changed_when: "'Upgrading' in apk_upgrade_result.stdout or 'Installing' in apk_upgrade_result.stdout"
+
+- name: Check running kernel on Alpine
+  ansible.builtin.command:
+    cmd: uname -r
+  register: alpine_running_kernel
+  changed_when: false
+
+- name: Check latest installed kernel on Alpine
+  ansible.builtin.shell: |
+    if [ -d /lib/modules ]; then
+      ls -1v /lib/modules 2>/dev/null | tail -n 1
+    else
+      echo "{{ alpine_running_kernel.stdout.strip() }}"
+    fi
+  register: alpine_installed_kernel
+  changed_when: false
+
+- name: Set system_reboot_required fact for Alpine
+  ansible.builtin.set_fact:
+    system_reboot_required: "{{ alpine_running_kernel.stdout.strip() != alpine_installed_kernel.stdout.strip() }}"

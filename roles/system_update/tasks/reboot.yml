@@ -1,0 +1,37 @@
+---
+- name: Notify when reboot is skipped via reboot_mode=never
+  ansible.builtin.debug:
+    msg: "Reboot is required on {{ inventory_hostname }}, but was skipped due to reboot_mode=never."
+  when:
+    - system_reboot_required | default(false) | bool
+    - reboot_mode == 'never'
+
+- name: Prompt operator for reboot confirmation when required
+  ansible.builtin.pause:
+    prompt: "Host '{{ inventory_hostname }}' requires a reboot to finish applying updates. Reboot now? [y/N]"
+  register: reboot_prompt_result
+  when:
+    - system_reboot_required | default(false) | bool
+    - reboot_mode == 'prompt'
+
+- name: Determine if reboot should execute
+  ansible.builtin.set_fact:
+    do_execute_reboot: >-
+      {{
+        (system_reboot_required | default(false) | bool) and
+        (
+          (reboot_mode == 'always') or
+          (
+            reboot_mode == 'prompt' and
+            reboot_prompt_result is defined and
+            reboot_prompt_result.user_input is defined and
+            reboot_prompt_result.user_input | lower in ['y', 'yes']
+          )
+        )
+      }}
+
+- name: Reboot system if confirmed or forced
+  ansible.builtin.reboot:
+    msg: "Rebooting system after fleet-ansible update-os"
+    reboot_timeout: "{{ reboot_timeout }}"
+  when: do_execute_reboot | bool
