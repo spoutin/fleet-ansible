@@ -82,10 +82,12 @@ fleet-ansible/
 ├── playbooks/
 │   ├── bootstrap.yml              # Hybrid rollout (Proxmox push -> SSH fallback)
 │   ├── enroll.yml                 # Controller enrollment & 1-year SSH certificate
-│   └── install-pki.yml            # Routine fleet-wide configuration
+│   ├── install-pki.yml            # Routine fleet-wide configuration
+│   └── update-os.yml              # Routine fleet OS package updates
 ├── roles/
 │   ├── proxmox_bootstrap/         # Executes pct/qm push & exec from hypervisors
-│   └── ssh_ca_client/             # In-guest sshd CA configuration & safety handlers
+│   ├── ssh_ca_client/             # In-guest sshd CA configuration & safety handlers
+│   └── system_update/             # Multi-OS package upgrades (APT, APK, DNF) & reboot handling
 └── scripts/
     ├── setup-lxc.sh               # Bootstraps the Debian 12 Ansible LXC
     └── setup-openbao.sh           # Seeds OpenBao secret/data/fleet & AppRole
@@ -124,6 +126,25 @@ To update or verify CA trust across all managed hosts manually:
 ```bash
 fleet-ansible install-pki
 ```
+
+To update operating system packages across the fleet:
+```bash
+# Update all managed hosts (hypervisors excluded by default for safety)
+fleet-ansible update-os
+
+# Update specific host, IP, or group
+fleet-ansible update-os debian
+fleet-ansible update-os 10.0.0.82
+fleet-ansible update-os hypervisors
+
+# Control reboot behavior:
+# - Default: Prompt interactively if a package/kernel update requires a reboot
+# - Auto-reboot if required:
+fleet-ansible update-os --reboot
+# - Skip reboot even if required:
+fleet-ansible update-os --no-reboot
+```
+*(For major OS upgrades, hypervisor live migration orchestration, and dry-run check mode, see [TODO.md](TODO.md).)*
 
 ---
 
