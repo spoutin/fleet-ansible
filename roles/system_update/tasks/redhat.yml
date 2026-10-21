@@ -1,17 +1,17 @@
 ---
-- name: "Upgrade all packages on RedHat family systems on {{ inventory_hostname }}"
+- name: Upgrade all packages on RedHat family systems
   ansible.builtin.package:
     name: "*"
     state: latest
     update_cache: true
 
-- name: "Check if RedHat family system requires reboot on {{ inventory_hostname }}"
+- name: Check if RedHat family system requires reboot
   ansible.builtin.command:
     cmd: needs-restarting -r
   register: redhat_needs_restarting
   failed_when: false
   changed_when: false
 
-- name: "Set system_reboot_required fact for RedHat family on {{ inventory_hostname }}"
+- name: Set system_reboot_required fact for RedHat family
   ansible.builtin.set_fact:
     system_reboot_required: "{{ redhat_needs_restarting.rc == 1 }}"

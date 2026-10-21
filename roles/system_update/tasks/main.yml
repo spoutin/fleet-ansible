@@ -1,43 +1,43 @@
 ---
-- name: "Starting OS update on {{ inventory_hostname }} [{{ ansible_distribution | default(ansible_os_family) }} {{ ansible_distribution_version | default('') }}]"
+- name: Announce target host
   ansible.builtin.debug:
     msg: "Target: {{ inventory_hostname }} (IP: {{ ansible_host | default(ansible_default_ipv4.address | default('N/A')) }}) | OS: {{ ansible_distribution | default(ansible_os_family) }} {{ ansible_distribution_version | default('') }}"
 
-- name: "Check for TrueNAS appliance middleware on {{ inventory_hostname }}"
+- name: Check for TrueNAS appliance middleware
   ansible.builtin.stat:
     path: /usr/bin/midclt
   register: truenas_midclt_stat
 
-- name: "Notify and skip TrueNAS appliances on {{ inventory_hostname }}"
+- name: Notify and skip TrueNAS appliances
   ansible.builtin.debug:
     msg: "Skipping {{ inventory_hostname }}: TrueNAS appliance detected (/usr/bin/midclt). System updates are handled via TrueNAS middleware."
   when: truenas_midclt_stat.stat.exists
 
-- name: "Apply Debian / Ubuntu updates on {{ inventory_hostname }}"
+- name: Apply Debian / Ubuntu updates
   ansible.builtin.include_tasks: debian.yml
   when:
     - ansible_os_family == 'Debian'
     - not truenas_midclt_stat.stat.exists
 
-- name: "Apply Alpine Linux updates on {{ inventory_hostname }}"
+- name: Apply Alpine Linux updates
   ansible.builtin.include_tasks: alpine.yml
   when:
     - ansible_os_family == 'Alpine'
     - not truenas_midclt_stat.stat.exists
 
-- name: "Apply RedHat / CentOS / Rocky / Fedora updates on {{ inventory_hostname }}"
+- name: Apply RedHat / CentOS / Rocky / Fedora updates
   ansible.builtin.include_tasks: redhat.yml
   when:
     - ansible_os_family == 'RedHat'
     - not truenas_midclt_stat.stat.exists
 
-- name: "Notify if operating system family is unsupported on {{ inventory_hostname }}"
+- name: Notify if operating system family is unsupported
   ansible.builtin.debug:
     msg: "Warning: Operating system family '{{ ansible_os_family | default('unknown') }}' on {{ inventory_hostname }} is not supported by system_update."
   when:
     - ansible_os_family not in ['Debian', 'Alpine', 'RedHat']
     - not truenas_midclt_stat.stat.exists
 
-- name: "Handle reboot workflow on {{ inventory_hostname }}"
+- name: Handle reboot workflow
   ansible.builtin.include_tasks: reboot.yml
   when: not truenas_midclt_stat.stat.exists
