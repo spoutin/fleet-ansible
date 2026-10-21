@@ -85,6 +85,7 @@ ${C_BOLD}${C_YELLOW}Commands:${C_RESET}
   ${C_BOLD}${C_GREEN}status${C_RESET} ${C_DIM}[target]${C_RESET}      Show fleet enrollment dashboard (live check, PAUSED, & error states)
   ${C_BOLD}${C_GREEN}bootstrap${C_RESET} ${C_DIM}[target]${C_RESET}   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet; pass --restart to force sshd restart)
+  ${C_BOLD}${C_GREEN}update-os${C_RESET} ${C_DIM}[target]${C_RESET}   Apply routine OS package updates across target or fleet (--reboot, --no-reboot)
   ${C_BOLD}${C_GREEN}restart-ssh${C_RESET} ${C_DIM}[target]${C_RESET}   Safely validate and restart sshd on target (or whole fleet)
   ${C_BOLD}${C_GREEN}ping${C_RESET} ${C_DIM}[target]${C_RESET}        Test SSH connectivity (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}enroll${C_RESET}               Enroll controller key with OpenBao CA & configure SSH certificate
@@ -336,6 +337,40 @@ case "$CMD" in
             echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Installing SSH CA PKI Trust Across Managed Fleet...${C_RESET}"
         fi
         run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/install-pki.yml" "${CLEAN_EXTRA_ARGS[@]}"
+        ;;
+    update-os)
+        parse_target "$@"
+        resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
+        setup_base_inventory
+        LIMIT_ARGS=()
+        CLEAN_EXTRA_ARGS=()
+        REBOOT_MODE="prompt"
+        for arg in "${EXTRA_ARGS[@]}"; do
+            case "$arg" in
+                --reboot|-r)
+                    REBOOT_MODE="always"
+                    ;;
+                --no-reboot)
+                    REBOOT_MODE="never"
+                    ;;
+                *)
+                    CLEAN_EXTRA_ARGS+=("$arg")
+                    ;;
+            esac
+        done
+        CLEAN_EXTRA_ARGS+=(-e "reboot_mode=$REBOOT_MODE")
+        if [ -n "$TARGET" ]; then
+            if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                INV_ARGS+=(-i "$TARGET,")
+            fi
+            LIMIT_ARGS=(--limit "$TARGET")
+            CLEAN_EXTRA_ARGS+=(-e "update_target=$TARGET")
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System on [${C_CYAN}$TARGET${C_RESET}${C_BOLD}] (reboot mode: $REBOOT_MODE)...${C_RESET}"
+        else
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System Across Managed Fleet (reboot mode: $REBOOT_MODE)...${C_RESET}"
+        fi
+        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/update-os.yml" "${CLEAN_EXTRA_ARGS[@]}"
         ;;
     restart-ssh)
         parse_target "$@"
