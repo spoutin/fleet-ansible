@@ -13,8 +13,8 @@ _fleet_ansible_complete() {
         cword=$COMP_CWORD
     fi
 
-    local commands="status bootstrap install-pki restart-ssh ping enroll renew-cert show-key public-key completion inventory raw help"
-    local options="-k --ask-pass -v -vvv -l --limit -r --restart -h --help"
+    local commands="status bootstrap install-pki update-os restart-ssh ping enroll renew-cert show-key public-key completion inventory raw help"
+    local options="-k --ask-pass -v -vvv -l --limit -r --restart --reboot --no-reboot -h --help"
 
     # Completing the primary command
     if [ "$cword" -eq 1 ]; then
@@ -48,7 +48,7 @@ _fleet_ansible_complete() {
     esac
 
     case "$cmd" in
-        bootstrap|install-pki|ping)
+        bootstrap|install-pki|update-os|ping)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "$options" -- "$cur") )
             else

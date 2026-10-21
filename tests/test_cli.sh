@@ -37,6 +37,8 @@ test_target "10.0.0.82" "-k -vvv" --limit 10.0.0.82 -k -vvv
 test_target "truenas" "" truenas
 test_target "hypervisors" "-k" -l hypervisors -k
 test_target "debian" "--check" debian --check
+test_target "10.0.0.82" "--reboot" 10.0.0.82 --reboot
+test_target "debian" "--no-reboot" debian --no-reboot
 
 # Test resolve_target with IP bypass
 TARGET="10.0.0.82"
@@ -137,6 +139,26 @@ if [[ "${COMPREPLY[*]}" != *"restart-ssh"* ]]; then
     exit 1
 fi
 echo "PASS: Dynamic completion output successfully completed 'restart-ssh'"
+
+# Verify 'update-os' is completed
+COMP_WORDS=("fleet-ansible" "up")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"update-os"* ]]; then
+    echo "FAIL: Dynamic completion output failed to complete 'update-os': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed 'update-os'"
+
+# Verify 'update-os' completes options like --reboot and --no-reboot
+COMP_WORDS=("fleet-ansible" "update-os" "--reb")
+COMP_CWORD=2
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"--reboot"* ]]; then
+    echo "FAIL: Completion output failed to complete '--reboot': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed '--reboot'"
 
 # Test fleet-ansible status --no-ping runs without error
 status_out="$("$APP_DIR/bin/fleet-ansible" status --no-ping)"
