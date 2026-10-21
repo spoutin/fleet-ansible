@@ -135,6 +135,7 @@ class TestInventoryIPMapping(unittest.TestCase):
 
         # OS groups should also contain the host names
         self.assertIn("truenas.int.spoutin.org", inv["debian"]["hosts"])
+        self.assertIn("truenas.int.spoutin.org", inv["truenas"]["hosts"])
         self.assertIn("10.0.0.99", inv["ubuntu"]["hosts"])
         self.assertIn("managed_hosts", inv["all"]["children"])
         self.assertIn("10.0.0.82", inv["all"]["children"])

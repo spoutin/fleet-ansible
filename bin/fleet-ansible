@@ -161,7 +161,7 @@ resolve_target() {
         return
     fi
     case "$TARGET" in
-        all|managed_hosts|hypervisors|debian|ubuntu|alpine|redhat|proxmox|ungrouped)
+        all|managed_hosts|hypervisors|debian|ubuntu|alpine|redhat|proxmox|truenas|ungrouped)
             return
             ;;
     esac

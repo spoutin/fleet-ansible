@@ -221,7 +221,7 @@ def get_completion_targets() -> list:
     """Return list of all completion targets (groups, hostnames, IPs) with fast cache."""
     targets = {
         "hypervisors", "managed_hosts", "debian", "ubuntu",
-        "alpine", "redhat", "proxmox", "pve1", "pve2", "all"
+        "alpine", "redhat", "proxmox", "truenas", "pve1", "pve2", "all"
     }
 
     cache_file = "/tmp/.fleet_targets_cache"
@@ -279,8 +279,10 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
         "alpine": {"hosts": [], "vars": {"sshd_service_name": "sshd"}},
         "redhat": {"hosts": [], "vars": {"sshd_service_name": "sshd"}},
         "proxmox": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},
+        "truenas": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},
         "ungrouped": {"hosts": []},
     }
+    inventory["all"]["children"].append("truenas")
 
     # Fetch secrets from OpenBao
     bao_secrets = get_openbao_secrets()
@@ -343,6 +345,11 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
         if os_group not in inventory:
             inventory[os_group] = {"hosts": []}
         inventory[os_group]["hosts"].append(host_name)
+
+        dev_desc = f"{dev.get('hostname', '')} {dev.get('custom_hostname', '')} {dev.get('label', '')} {dev.get('notes', '')} {dev.get('vendor', '')}".lower()
+        if "truenas" in dev_desc:
+            if host_name not in inventory["truenas"]["hosts"]:
+                inventory["truenas"]["hosts"].append(host_name)
 
         # Map IP address as a group alias so `--limit <ip>` targets this host
         if ip not in inventory:

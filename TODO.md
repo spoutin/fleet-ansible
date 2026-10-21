@@ -28,3 +28,12 @@ Future enhancements and architectural extensions for `fleet-ansible`.
   - Query `apt-get -s dist-upgrade`, `apk upgrade --simulate`, or `dnf check-update`.
   - Format pending updates cleanly in CLI output.
   - Report packages that would trigger a reboot requirement without mutating system state.
+
+---
+
+## 4. TrueNAS Appliance System Updates
+- **Scope**: Orchestrate TrueNAS SCALE updates via TrueNAS middleware API (`midclt call update.update` / `update.check_available`).
+- **Considerations**:
+  - TrueNAS SCALE is an appliance with read-only root system integrity; package managers like `apt` must never be run directly.
+  - Coordinate ZFS pool scrub checks and SMB/NFS client connection drains prior to update and reboot.
+  - Query update trains and train switching via `midclt call update.get_trains`.

@@ -3,7 +3,7 @@
 # Applies package upgrades and manages required reboots safely across the fleet
 
 - name: Update Operating System Packages Across Fleet
-  hosts: "{{ update_target | default('managed_hosts:all:!hypervisors') }}"
+  hosts: "{{ update_target | default('managed_hosts:all:!hypervisors:!truenas') }}"
   gather_facts: true
   become: true
   roles:

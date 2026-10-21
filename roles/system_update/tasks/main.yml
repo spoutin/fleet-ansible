@@ -1,20 +1,39 @@
 ---
+- name: Check for TrueNAS appliance middleware
+  ansible.builtin.stat:
+    path: /usr/bin/midclt
+  register: truenas_midclt_stat
+
+- name: Notify and skip TrueNAS appliances
+  ansible.builtin.debug:
+    msg: "Skipping {{ inventory_hostname }}: TrueNAS appliance detected (/usr/bin/midclt). System updates are handled via TrueNAS middleware."
+  when: truenas_midclt_stat.stat.exists
+
 - name: Apply Debian / Ubuntu updates
   ansible.builtin.include_tasks: debian.yml
-  when: ansible_os_family == 'Debian'
+  when:
+    - ansible_os_family == 'Debian'
+    - not truenas_midclt_stat.stat.exists
 
 - name: Apply Alpine Linux updates
   ansible.builtin.include_tasks: alpine.yml
-  when: ansible_os_family == 'Alpine'
+  when:
+    - ansible_os_family == 'Alpine'
+    - not truenas_midclt_stat.stat.exists
 
 - name: Apply RedHat / CentOS / Rocky / Fedora updates
   ansible.builtin.include_tasks: redhat.yml
-  when: ansible_os_family == 'RedHat'
+  when:
+    - ansible_os_family == 'RedHat'
+    - not truenas_midclt_stat.stat.exists
 
 - name: Notify if operating system family is unsupported
   ansible.builtin.debug:
     msg: "Warning: Operating system family '{{ ansible_os_family | default('unknown') }}' on {{ inventory_hostname }} is not supported by system_update."
-  when: ansible_os_family not in ['Debian', 'Alpine', 'RedHat']
+  when:
+    - ansible_os_family not in ['Debian', 'Alpine', 'RedHat']
+    - not truenas_midclt_stat.stat.exists
 
 - name: Handle reboot workflow
   ansible.builtin.include_tasks: reboot.yml
+  when: not truenas_midclt_stat.stat.exists

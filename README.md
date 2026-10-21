@@ -129,7 +129,7 @@ fleet-ansible install-pki
 
 To update operating system packages across the fleet:
 ```bash
-# Update all managed hosts (hypervisors excluded by default for safety)
+# Update all managed hosts (hypervisors & TrueNAS excluded by default for safety)
 fleet-ansible update-os
 
 # Update specific host, IP, or group
@@ -144,7 +144,7 @@ fleet-ansible update-os --reboot
 # - Skip reboot even if required:
 fleet-ansible update-os --no-reboot
 ```
-*(For major OS upgrades, hypervisor live migration orchestration, and dry-run check mode, see [TODO.md](TODO.md).)*
+*(For major OS upgrades, hypervisor live migration orchestration, TrueNAS middleware updates, and dry-run check mode, see [TODO.md](TODO.md).)*
 
 ---
 

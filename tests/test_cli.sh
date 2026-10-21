@@ -58,6 +58,14 @@ if [ "$TARGET" != "hypervisors" ]; then
 fi
 echo "PASS: resolve_target bypassed for hypervisors"
 
+TARGET="truenas"
+resolve_target
+if [ "$TARGET" != "truenas" ]; then
+    echo "FAIL: resolve_target modified truenas group" >&2
+    exit 1
+fi
+echo "PASS: resolve_target bypassed for truenas"
+
 # Test setup_password_file with ANSIBLE_SSH_PASSWORD
 export ANSIBLE_SSH_PASSWORD="test-vault-password"
 setup_password_file
