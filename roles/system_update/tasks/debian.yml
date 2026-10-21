@@ -1,21 +1,36 @@
 ---
-- name: Update apt package cache and upgrade all packages
+- name: "Refresh apt repository cache on {{ inventory_hostname }}"
+  ansible.builtin.command: apt-get update
+  register: apt_cache_update
+  changed_when: false
+  failed_when: false
+
+- name: "Report apt repository errors on {{ inventory_hostname }}"
+  ansible.builtin.debug:
+    msg:
+      - "WARNING: Apt repository refresh failed on host '{{ inventory_hostname }}' (IP: {{ ansible_host | default(ansible_default_ipv4.address | default('N/A')) }})."
+      - "Repository errors:"
+      - "{{ apt_cache_update.stderr_lines | default(apt_cache_update.stdout_lines | default(['Unknown apt error'])) }}"
+  when:
+    - apt_cache_update.rc != 0
+    - (apt_cache_update.stderr_lines | default([]) | length > 0) or (apt_cache_update.stdout_lines | default([]) | length > 0)
+
+- name: "Upgrade installed Debian / Ubuntu packages on {{ inventory_hostname }}"
   ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 0
+    update_cache: false
     upgrade: "dist"
     dpkg_options: "force-confdef,force-confold"
 
-- name: Autoremove unused packages and clean apt cache
+- name: "Autoremove unused packages and clean apt cache on {{ inventory_hostname }}"
   ansible.builtin.apt:
     autoremove: true
     autoclean: true
 
-- name: Check if Debian/Ubuntu requires reboot
+- name: "Check if Debian/Ubuntu requires reboot on {{ inventory_hostname }}"
   ansible.builtin.stat:
     path: /var/run/reboot-required
   register: debian_reboot_file
 
-- name: Set system_reboot_required fact for Debian/Ubuntu
+- name: "Set system_reboot_required fact for Debian/Ubuntu on {{ inventory_hostname }}"
   ansible.builtin.set_fact:
     system_reboot_required: "{{ debian_reboot_file.stat.exists }}"
