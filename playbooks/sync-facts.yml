@@ -1,0 +1,10 @@
+---
+# Fleet OS Facts Sync Playbook
+# Collects authoritative OS details (name, version, family, MAC) and updates LAN-Orangutan
+
+- name: Sync Host OS Facts to LAN-Orangutan
+  hosts: "{{ sync_target | default('managed_hosts:all') }}"
+  gather_facts: true
+  become: false
+  roles:
+    - orangutan_facts

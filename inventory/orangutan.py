@@ -97,30 +97,18 @@ def get_openbao_secrets() -> Dict[str, Any]:
 
 
 def fetch_orangutan_devices(
-    base_url: str, password: Optional[str] = None
+    base_url: str, token: Optional[str] = None, password: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Authenticate to LAN-Orangutan and fetch devices list."""
-    cookie_jar = http.cookiejar.CookieJar()
+    """Fetch devices list from LAN-Orangutan using Bearer token authentication."""
+    auth_token = token or password
     opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(cookie_jar),
         urllib.request.HTTPSHandler(context=SSL_CTX),
     )
 
-    # Perform login if password is provided
-    if password and password != "CHANGE_ME":
-        try:
-            login_data = urllib.parse.urlencode({"password": password}).encode("utf-8")
-            login_req = urllib.request.Request(
-                f"{base_url}/login",
-                data=login_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                method="POST",
-            )
-            opener.open(login_req, timeout=5)
-        except Exception as e:
-            sys.stderr.write(f"Warning: LAN-Orangutan login failed: {e}\n")
-
     req = urllib.request.Request(f"{base_url}/api/devices", method="GET")
+    if auth_token and auth_token != "CHANGE_ME":
+        req.add_header("Authorization", f"Bearer {auth_token}")
+
     with opener.open(req, timeout=10) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
@@ -166,12 +154,15 @@ def find_devices_by_target(query: str, only_managed: bool = True) -> list:
         or bao_secrets.get("orangutan_url")
         or "http://10.0.0.1:291"
     ).rstrip("/")
-    orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get(
-        "orangutan_password"
+    orangutan_token = (
+        os.getenv("ORANGUTAN_API_TOKEN")
+        or os.getenv("ORANGUTAN_PASSWORD")
+        or bao_secrets.get("orangutan_api_token")
+        or bao_secrets.get("orangutan_password")
     )
 
     try:
-        devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
+        devices = fetch_orangutan_devices(orangutan_url, token=orangutan_token)
     except Exception:
         return []
 
@@ -244,8 +235,13 @@ def get_completion_targets() -> list:
             or bao_secrets.get("orangutan_url")
             or "http://10.0.0.1:291"
         ).rstrip("/")
-        orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get("orangutan_password")
-        devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
+        orangutan_token = (
+            os.getenv("ORANGUTAN_API_TOKEN")
+            or os.getenv("ORANGUTAN_PASSWORD")
+            or bao_secrets.get("orangutan_api_token")
+            or bao_secrets.get("orangutan_password")
+        )
+        devices = fetch_orangutan_devices(orangutan_url, token=orangutan_token)
         for ip, dev in devices.items():
             targets.add(ip)
             base_name = get_device_base_name(ip, dev)
@@ -287,18 +283,26 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
     # Fetch secrets from OpenBao
     bao_secrets = get_openbao_secrets()
 
-    # Determine LAN-Orangutan URL & Password
+    # Determine LAN-Orangutan URL & Token / Password
     orangutan_url = (
         os.getenv("ORANGUTAN_URL")
         or bao_secrets.get("orangutan_url")
         or "http://10.0.0.1:291"
     ).rstrip("/")
-    orangutan_password = os.getenv("ORANGUTAN_PASSWORD") or bao_secrets.get(
-        "orangutan_password"
+    orangutan_token = (
+        os.getenv("ORANGUTAN_API_TOKEN")
+        or os.getenv("ORANGUTAN_PASSWORD")
+        or bao_secrets.get("orangutan_api_token")
+        or bao_secrets.get("orangutan_password")
+        or ""
     )
+    inventory["all"]["vars"] = {
+        "orangutan_url": orangutan_url,
+        "orangutan_api_token": orangutan_token,
+    }
 
     try:
-        devices = fetch_orangutan_devices(orangutan_url, orangutan_password)
+        devices = fetch_orangutan_devices(orangutan_url, token=orangutan_token)
     except Exception as e:
         sys.stderr.write(f"Notice: LAN-Orangutan at {orangutan_url} unreachable: {e}\n")
         return inventory

@@ -141,6 +141,25 @@ class TestInventoryIPMapping(unittest.TestCase):
         self.assertIn("10.0.0.82", inv["all"]["children"])
         self.assertIn("10.0.0.99", inv["all"]["children"])
 
+    @patch("urllib.request.build_opener")
+    def test_fetch_orangutan_devices_bearer_auth(self, mock_build_opener):
+        from inventory.orangutan import fetch_orangutan_devices
+        import json
+        import io
+
+        mock_resp = io.BytesIO(json.dumps({"success": True, "data": {"10.0.0.5": {"hostname": "node1"}}}).encode("utf-8"))
+        mock_resp.status = 200
+        mock_opener = mock_build_opener.return_value
+        mock_opener.open.return_value = mock_resp
+
+        data = fetch_orangutan_devices("http://fake-orangutan:8080", token="secret-bearer-token")
+
+        self.assertIn("10.0.0.5", data)
+        call_args = mock_opener.open.call_args[0]
+        req = call_args[0]
+        self.assertEqual(req.get_method(), "GET")
+        self.assertEqual(req.get_header("Authorization"), "Bearer secret-bearer-token")
+
 
 if __name__ == "__main__":
     unittest.main()

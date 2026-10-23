@@ -1,0 +1,5 @@
+---
+orangutan_facts_url: "{{ orangutan_url | default('http://10.0.0.1:291') }}"
+orangutan_facts_token: "{{ orangutan_api_token | default('') }}"
+orangutan_facts_ignore_missing_mac: true
+orangutan_facts_ignore_unauthorized: false

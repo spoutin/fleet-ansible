@@ -1,0 +1,56 @@
+---
+- name: Determine target device MAC address
+  ansible.builtin.set_fact:
+    device_mac: >-
+      {{
+        ansible_default_ipv4.macaddress
+        | default(
+            (ansible_interfaces | default([]) | map('extract', hostvars[inventory_hostname], 'macaddress') | select('defined') | reject('equalto', '') | first)
+            | default('', true),
+            true
+          )
+      }}
+
+- name: Warn if MAC address could not be determined
+  ansible.builtin.debug:
+    msg: "Notice: Unable to determine MAC address for {{ inventory_hostname }}. Skipping OS facts sync."
+  when: device_mac | length == 0
+
+- name: Post OS facts to LAN-Orangutan
+  ansible.builtin.uri:
+    url: "{{ orangutan_facts_url.rstrip('/') }}/api/devices/{{ device_mac }}/facts"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ orangutan_facts_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      os: "{{ ansible_distribution | default(ansible_os_family) }}"
+      os_version: "{{ ansible_distribution_version | default('') }}"
+      os_family: "{{ ansible_os_family | default('Linux') }}"
+    status_code:
+      - 200
+      - 404
+  register: orangutan_fact_sync_result
+  delegate_to: localhost
+  when:
+    - device_mac | length > 0
+    - orangutan_facts_token | length > 0
+  failed_when:
+    - orangutan_fact_sync_result.status not in [200, 404]
+
+- name: Warn if device MAC not found in LAN-Orangutan (404)
+  ansible.builtin.debug:
+    msg: "Notice: Device {{ inventory_hostname }} (MAC: {{ device_mac }}) not found in LAN-Orangutan. Run a scan in LAN-Orangutan first."
+  when:
+    - device_mac | length > 0
+    - orangutan_fact_sync_result is defined
+    - orangutan_fact_sync_result.status | default(0) == 404
+
+- name: Confirm OS facts updated in LAN-Orangutan
+  ansible.builtin.debug:
+    msg: "Updated LAN-Orangutan OS facts for {{ inventory_hostname }} (MAC: {{ device_mac }}): {{ ansible_distribution | default(ansible_os_family) }} {{ ansible_distribution_version | default('') }} ({{ ansible_os_family | default('Linux') }})"
+  when:
+    - device_mac | length > 0
+    - orangutan_fact_sync_result is defined
+    - orangutan_fact_sync_result.status | default(0) == 200

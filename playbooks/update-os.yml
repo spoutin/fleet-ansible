@@ -8,3 +8,46 @@
   become: true
   roles:
     - system_update
+
+- name: Prompt for LAN-Orangutan OS Facts Sync
+  hosts: localhost
+  gather_facts: false
+  become: false
+  vars:
+    sync_facts_mode: "{{ sync_facts_mode | default('prompt') }}"
+  tasks:
+    - name: Ask operator to sync OS facts to LAN-Orangutan
+      ansible.builtin.pause:
+        prompt: "Sync updated OS facts to LAN-Orangutan? [Y/n]"
+      register: sync_facts_prompt
+      when: sync_facts_mode == 'prompt'
+
+    - name: Record sync_facts decision
+      ansible.builtin.set_fact:
+        should_sync_facts: >-
+          {{
+            (sync_facts_mode == 'always') or
+            (
+              sync_facts_mode == 'prompt' and
+              (sync_facts_prompt.user_input is not defined or sync_facts_prompt.user_input | trim | lower in ['', 'y', 'yes'])
+            )
+          }}
+
+- name: Sync Updated OS Facts to LAN-Orangutan
+  hosts: "{{ update_target | default('managed_hosts:all:!hypervisors:!truenas') }}"
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Refresh host facts post-update
+      ansible.builtin.setup:
+        gather_subset:
+          - default_ipv4
+          - network
+          - os_family
+          - distribution
+      when: hostvars['localhost']['should_sync_facts'] | default(false) | bool
+
+    - name: Apply orangutan_facts role when requested
+      ansible.builtin.include_role:
+        name: orangutan_facts
+      when: hostvars['localhost']['should_sync_facts'] | default(false) | bool

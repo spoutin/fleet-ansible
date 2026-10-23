@@ -168,6 +168,26 @@ if [[ "${COMPREPLY[*]}" != *"--reboot"* ]]; then
 fi
 echo "PASS: Dynamic completion output successfully completed '--reboot'"
 
+# Verify 'sync-facts' is completed
+COMP_WORDS=("fleet-ansible" "syn")
+COMP_CWORD=1
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"sync-facts"* ]]; then
+    echo "FAIL: Dynamic completion output failed to complete 'sync-facts': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed 'sync-facts'"
+
+# Verify 'update-os' completes --sync-facts
+COMP_WORDS=("fleet-ansible" "update-os" "--sync")
+COMP_CWORD=2
+_fleet_ansible_complete
+if [[ "${COMPREPLY[*]}" != *"--sync-facts"* ]]; then
+    echo "FAIL: Completion output failed to complete '--sync-facts': '${COMPREPLY[*]}'" >&2
+    exit 1
+fi
+echo "PASS: Dynamic completion output successfully completed '--sync-facts'"
+
 # Test fleet-ansible status --no-ping runs without error
 status_out="$("$APP_DIR/bin/fleet-ansible" status --no-ping)"
 if [[ "$status_out" != *"FLEET ENROLLMENT & HEALTH STATUS"* ]]; then

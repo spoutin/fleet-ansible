@@ -83,8 +83,10 @@ fleet-ansible/
 │   ├── bootstrap.yml              # Hybrid rollout (Proxmox push -> SSH fallback)
 │   ├── enroll.yml                 # Controller enrollment & 1-year SSH certificate
 │   ├── install-pki.yml            # Routine fleet-wide configuration
+│   ├── sync-facts.yml             # Authoritative OS facts collection & LAN-Orangutan sync
 │   └── update-os.yml              # Routine fleet OS package updates
 ├── roles/
+│   ├── orangutan_facts/           # Collects host OS distribution/version & posts to LAN-Orangutan
 │   ├── proxmox_bootstrap/         # Executes pct/qm push & exec from hypervisors
 │   ├── ssh_ca_client/             # In-guest sshd CA configuration & safety handlers
 │   └── system_update/             # Multi-OS package upgrades (APT, APK, DNF) & reboot handling
@@ -143,6 +145,23 @@ fleet-ansible update-os hypervisors
 fleet-ansible update-os --reboot
 # - Skip reboot even if required:
 fleet-ansible update-os --no-reboot
+
+# Control LAN-Orangutan OS facts sync:
+# - Default: Prompt interactively after updates whether to sync OS facts to LAN-Orangutan
+# - Auto-sync OS facts:
+fleet-ansible update-os --sync-facts
+# - Skip syncing OS facts:
+fleet-ansible update-os --no-sync-facts
+```
+
+To sync authoritative host OS details (name, version, family) to LAN-Orangutan on demand:
+```bash
+# Sync OS facts across all managed hosts
+fleet-ansible sync-facts
+
+# Sync OS facts for a specific host, IP, or group
+fleet-ansible sync-facts debian
+fleet-ansible sync-facts 10.0.0.82
 ```
 *(For major OS upgrades, hypervisor live migration orchestration, TrueNAS middleware updates, and dry-run check mode, see [TODO.md](TODO.md).)*
 

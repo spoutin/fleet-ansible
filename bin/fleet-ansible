@@ -85,7 +85,8 @@ ${C_BOLD}${C_YELLOW}Commands:${C_RESET}
   ${C_BOLD}${C_GREEN}status${C_RESET} ${C_DIM}[target]${C_RESET}      Show fleet enrollment dashboard (live check, PAUSED, & error states)
   ${C_BOLD}${C_GREEN}bootstrap${C_RESET} ${C_DIM}[target]${C_RESET}   Run hybrid bootstrap for a target (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}install-pki${C_RESET} ${C_DIM}[target]${C_RESET} Install and configure SSH CA trust on target (or whole fleet; pass --restart to force sshd restart)
-  ${C_BOLD}${C_GREEN}update-os${C_RESET} ${C_DIM}[target]${C_RESET}   Apply routine OS package updates across target or fleet (--reboot, --no-reboot)
+  ${C_BOLD}${C_GREEN}update-os${C_RESET} ${C_DIM}[target]${C_RESET}   Apply routine OS package updates across target or fleet (--reboot, --no-reboot, --sync-facts, --no-sync-facts)
+  ${C_BOLD}${C_GREEN}sync-facts${C_RESET} ${C_DIM}[target]${C_RESET}  Collect authoritative OS facts (name, version, family) and update LAN-Orangutan
   ${C_BOLD}${C_GREEN}restart-ssh${C_RESET} ${C_DIM}[target]${C_RESET}   Safely validate and restart sshd on target (or whole fleet)
   ${C_BOLD}${C_GREEN}ping${C_RESET} ${C_DIM}[target]${C_RESET}        Test SSH connectivity (IP, hostname, group, or whole fleet)
   ${C_BOLD}${C_GREEN}enroll${C_RESET}               Enroll controller key with OpenBao CA & configure SSH certificate
@@ -346,6 +347,7 @@ case "$CMD" in
         LIMIT_ARGS=()
         CLEAN_EXTRA_ARGS=()
         REBOOT_MODE="prompt"
+        SYNC_FACTS_MODE="prompt"
         for arg in "${EXTRA_ARGS[@]}"; do
             case "$arg" in
                 --reboot|-r)
@@ -354,23 +356,47 @@ case "$CMD" in
                 --no-reboot)
                     REBOOT_MODE="never"
                     ;;
+                --sync-facts)
+                    SYNC_FACTS_MODE="always"
+                    ;;
+                --no-sync-facts)
+                    SYNC_FACTS_MODE="never"
+                    ;;
                 *)
                     CLEAN_EXTRA_ARGS+=("$arg")
                     ;;
             esac
         done
-        CLEAN_EXTRA_ARGS+=(-e "reboot_mode=$REBOOT_MODE")
+        CLEAN_EXTRA_ARGS+=(-e "reboot_mode=$REBOOT_MODE" -e "sync_facts_mode=$SYNC_FACTS_MODE")
         if [ -n "$TARGET" ]; then
             if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 INV_ARGS+=(-i "$TARGET,")
             fi
             LIMIT_ARGS=(--limit "$TARGET")
             CLEAN_EXTRA_ARGS+=(-e "update_target=$TARGET")
-            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System on [${C_CYAN}$TARGET${C_RESET}${C_BOLD}] (reboot mode: $REBOOT_MODE)...${C_RESET}"
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System on [${C_CYAN}$TARGET${C_RESET}${C_BOLD}] (reboot mode: $REBOOT_MODE, sync facts: $SYNC_FACTS_MODE)...${C_RESET}"
         else
-            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System Across Managed Fleet (reboot mode: $REBOOT_MODE)...${C_RESET}"
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Updating Operating System Across Managed Fleet (reboot mode: $REBOOT_MODE, sync facts: $SYNC_FACTS_MODE)...${C_RESET}"
         fi
         run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/update-os.yml" "${CLEAN_EXTRA_ARGS[@]}"
+        ;;
+    sync-facts)
+        parse_target "$@"
+        resolve_target
+        setup_password_file "${EXTRA_ARGS[@]}"
+        setup_base_inventory
+        LIMIT_ARGS=()
+        if [ -n "$TARGET" ]; then
+            if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                INV_ARGS+=(-i "$TARGET,")
+            fi
+            LIMIT_ARGS=(--limit "$TARGET")
+            EXTRA_ARGS+=(-e "sync_target=$TARGET")
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Syncing OS Facts to LAN-Orangutan for [${C_CYAN}$TARGET${C_RESET}${C_BOLD}]...${C_RESET}"
+        else
+            echo "${C_BOLD}${C_BLUE}==>${C_RESET} ${C_BOLD}Syncing OS Facts to LAN-Orangutan Across Managed Fleet...${C_RESET}"
+        fi
+        run_ansible_playbook "${INV_ARGS[@]}" "${LIMIT_ARGS[@]}" "$APP_DIR/playbooks/sync-facts.yml" "${EXTRA_ARGS[@]}"
         ;;
     restart-ssh)
         parse_target "$@"
@@ -406,8 +432,8 @@ _fleet_ansible_complete() {
         cword=$COMP_CWORD
     fi
 
-    local commands="status bootstrap install-pki update-os restart-ssh ping enroll renew-cert show-key public-key completion inventory raw help"
-    local options="-k --ask-pass -v -vvv -l --limit -r --restart --reboot --no-reboot -h --help"
+    local commands="status bootstrap install-pki update-os sync-facts restart-ssh ping enroll renew-cert show-key public-key completion inventory raw help"
+    local options="-k --ask-pass -v -vvv -l --limit -r --restart --reboot --no-reboot --sync-facts --no-sync-facts -h --help"
 
     if [ "$cword" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
@@ -439,7 +465,7 @@ _fleet_ansible_complete() {
     esac
 
     case "$cmd" in
-        bootstrap|install-pki|update-os|ping)
+        bootstrap|install-pki|update-os|sync-facts|ping)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "$options" -- "$cur") )
             else
