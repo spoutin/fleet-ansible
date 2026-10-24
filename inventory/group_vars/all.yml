@@ -28,5 +28,5 @@ supports_sshd_config_d: true
 operator_user: "ablack"
 
 # LAN-Orangutan integration
-orangutan_url: "{{ lookup('env', 'ORANGUTAN_URL') | default('http://10.0.0.1:291', true) }}"
-orangutan_api_token: "{{ lookup('env', 'ORANGUTAN_API_TOKEN') | default(lookup('env', 'ORANGUTAN_PASSWORD') | default('', true), true) }}"
+orangutan_url: "{{ hostvars[inventory_hostname]['orangutan_url'] | default(lookup('env', 'ORANGUTAN_URL') | default('http://10.0.0.1:291', true), true) }}"
+orangutan_api_token: "{{ hostvars[inventory_hostname]['orangutan_api_token'] | default(lookup('env', 'ORANGUTAN_API_TOKEN') | default(lookup('env', 'ORANGUTAN_PASSWORD') | default('', true), true), true) }}"

@@ -338,6 +338,8 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
             "orangutan_vendor": dev.get("vendor", ""),
             "orangutan_label": dev.get("label", ""),
             "ansible_managed": is_managed,
+            "orangutan_url": orangutan_url,
+            "orangutan_api_token": orangutan_token,
         }
 
         inventory["_meta"]["hostvars"][host_name] = hostvars

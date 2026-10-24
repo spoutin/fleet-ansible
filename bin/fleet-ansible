@@ -261,6 +261,32 @@ print(sec.get("ansible_ssh_password", ""))
     fi
 }
 
+setup_orangutan_credentials() {
+    ORANGUTAN_URL_VAL="${ORANGUTAN_URL:-}"
+    ORANGUTAN_TOKEN_VAL="${ORANGUTAN_API_TOKEN:-${ORANGUTAN_PASSWORD:-}}"
+    if [ -z "$ORANGUTAN_TOKEN_VAL" ]; then
+        local creds
+        creds="$(PYTHONPATH="$APP_DIR" "$PYTHON_CMD" -c '
+from inventory.orangutan import get_openbao_secrets
+sec = get_openbao_secrets()
+url = sec.get("orangutan_url", "")
+tok = sec.get("orangutan_api_token") or sec.get("orangutan_password", "")
+print(f"{url}\t{tok}")
+' 2>/dev/null || true)"
+        if [ -n "$creds" ]; then
+            local u t
+            IFS=$'\t' read -r u t <<< "$creds"
+            [ -z "$ORANGUTAN_URL_VAL" ] && ORANGUTAN_URL_VAL="$u"
+            [ -z "$ORANGUTAN_TOKEN_VAL" ] && ORANGUTAN_TOKEN_VAL="$t"
+        fi
+    fi
+    [ -z "$ORANGUTAN_URL_VAL" ] && ORANGUTAN_URL_VAL="http://10.0.0.1:291"
+    if [ -n "$ORANGUTAN_TOKEN_VAL" ]; then
+        export ORANGUTAN_API_TOKEN="$ORANGUTAN_TOKEN_VAL"
+        export ORANGUTAN_URL="$ORANGUTAN_URL_VAL"
+    fi
+}
+
 run_ansible_playbook() {
     "$ANSIBLE_PLAYBOOK" "$@"
     local ret=$?
@@ -343,6 +369,7 @@ case "$CMD" in
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
+        setup_orangutan_credentials
         setup_base_inventory
         LIMIT_ARGS=()
         CLEAN_EXTRA_ARGS=()
@@ -368,6 +395,9 @@ case "$CMD" in
             esac
         done
         CLEAN_EXTRA_ARGS+=(-e "reboot_mode=$REBOOT_MODE" -e "sync_facts_mode=$SYNC_FACTS_MODE")
+        if [ -n "$ORANGUTAN_TOKEN_VAL" ]; then
+            CLEAN_EXTRA_ARGS+=(-e "orangutan_api_token=$ORANGUTAN_TOKEN_VAL" -e "orangutan_url=$ORANGUTAN_URL_VAL")
+        fi
         if [ -n "$TARGET" ]; then
             if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 INV_ARGS+=(-i "$TARGET,")
@@ -384,8 +414,12 @@ case "$CMD" in
         parse_target "$@"
         resolve_target
         setup_password_file "${EXTRA_ARGS[@]}"
+        setup_orangutan_credentials
         setup_base_inventory
         LIMIT_ARGS=()
+        if [ -n "$ORANGUTAN_TOKEN_VAL" ]; then
+            EXTRA_ARGS+=(-e "orangutan_api_token=$ORANGUTAN_TOKEN_VAL" -e "orangutan_url=$ORANGUTAN_URL_VAL")
+        fi
         if [ -n "$TARGET" ]; then
             if [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 INV_ARGS+=(-i "$TARGET,")

@@ -36,6 +36,28 @@ class TestOrangutanFacts(unittest.TestCase):
         self.assertEqual(body["os_version"], "24.04.1 LTS")
         self.assertEqual(body["os_family"], "Linux")
 
+    @patch("inventory.orangutan.get_openbao_secrets")
+    @patch("inventory.orangutan.fetch_orangutan_devices")
+    def test_inventory_populates_orangutan_token(self, mock_fetch, mock_secrets):
+        """Verify build_inventory includes orangutan_url and orangutan_api_token in all.vars and hostvars."""
+        from inventory.orangutan import build_inventory
+        mock_secrets.return_value = {
+            "orangutan_url": "http://10.0.0.1:291",
+            "orangutan_api_token": "secret-token-xyz",
+        }
+        mock_fetch.return_value = {
+            "10.0.0.50": {
+                "ansible_managed": True,
+                "hostname": "host1",
+                "mac": "aa:bb:cc:dd:ee:01",
+            }
+        }
+
+        inv = build_inventory(only_managed=True)
+        self.assertEqual(inv["all"]["vars"]["orangutan_api_token"], "secret-token-xyz")
+        self.assertEqual(inv["_meta"]["hostvars"]["host1"]["orangutan_api_token"], "secret-token-xyz")
+        self.assertEqual(inv["_meta"]["hostvars"]["host1"]["orangutan_mac"], "aa:bb:cc:dd:ee:01")
+
 
 if __name__ == "__main__":
     unittest.main()

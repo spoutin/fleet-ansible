@@ -1,19 +1,33 @@
 ---
+- name: Verify LAN-Orangutan API token is present
+  ansible.builtin.fail:
+    msg: >-
+      Cannot sync OS facts: LAN-Orangutan API token is missing or empty.
+      Ensure ORANGUTAN_API_TOKEN or ORANGUTAN_PASSWORD is set in /etc/fleet/openbao.env,
+      exported as an environment variable, or stored in OpenBao KV secrets at v1/fleet/data/credentials.
+  when: orangutan_facts_token | default('') | length == 0
+  run_once: true
+
 - name: Determine target device MAC address
   ansible.builtin.set_fact:
     device_mac: >-
       {{
         ansible_default_ipv4.macaddress
-        | default(
-            (ansible_interfaces | default([]) | map('extract', hostvars[inventory_hostname], 'macaddress') | select('defined') | reject('equalto', '') | first)
-            | default('', true),
-            true
+        if (ansible_default_ipv4 is defined and ansible_default_ipv4.macaddress is defined and ansible_default_ipv4.macaddress != '')
+        else (
+          orangutan_mac
+          if (orangutan_mac is defined and orangutan_mac != '')
+          else (
+            hostvars[inventory_hostname]['ansible_' + (ansible_default_ipv4.interface | default(''))]['macaddress']
+            if (ansible_default_ipv4 is defined and ansible_default_ipv4.interface is defined and hostvars[inventory_hostname]['ansible_' + ansible_default_ipv4.interface] is defined and hostvars[inventory_hostname]['ansible_' + ansible_default_ipv4.interface]['macaddress'] is defined and hostvars[inventory_hostname]['ansible_' + ansible_default_ipv4.interface]['macaddress'] != '')
+            else ''
           )
+        )
       }}
 
 - name: Warn if MAC address could not be determined
   ansible.builtin.debug:
-    msg: "Notice: Unable to determine MAC address for {{ inventory_hostname }}. Skipping OS facts sync."
+    msg: "Notice: Unable to determine MAC address for {{ inventory_hostname }}. Skipping OS facts sync for this host."
   when: device_mac | length == 0
 
 - name: Post OS facts to LAN-Orangutan
@@ -33,15 +47,13 @@
       - 404
   register: orangutan_fact_sync_result
   delegate_to: localhost
-  when:
-    - device_mac | length > 0
-    - orangutan_facts_token | length > 0
+  when: device_mac | length > 0
   failed_when:
     - orangutan_fact_sync_result.status not in [200, 404]
 
 - name: Warn if device MAC not found in LAN-Orangutan (404)
   ansible.builtin.debug:
-    msg: "Notice: Device {{ inventory_hostname }} (MAC: {{ device_mac }}) not found in LAN-Orangutan. Run a scan in LAN-Orangutan first."
+    msg: "Notice: Device {{ inventory_hostname }} (MAC: {{ device_mac }}) not found in LAN-Orangutan (404). Run a scan in LAN-Orangutan first."
   when:
     - device_mac | length > 0
     - orangutan_fact_sync_result is defined
