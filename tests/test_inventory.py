@@ -141,6 +141,28 @@ class TestInventoryIPMapping(unittest.TestCase):
         self.assertIn("10.0.0.82", inv["all"]["children"])
         self.assertIn("10.0.0.99", inv["all"]["children"])
 
+    @patch("inventory.orangutan.get_openbao_secrets")
+    @patch("inventory.orangutan.fetch_orangutan_devices")
+    def test_zorin_os_classification_and_inventory(self, mock_fetch, mock_secrets):
+        mock_secrets.return_value = {}
+        mock_fetch.return_value = {
+            "10.5.5.227": {
+                "ansible_managed": True,
+                "hostname": "zorin-workstation",
+                "vendor": "Zorin OS",
+            },
+        }
+
+        inv = build_inventory(only_managed=True)
+        self.assertIn("zorin", inv)
+        self.assertIn("zorin-workstation", inv["zorin"]["hosts"])
+        self.assertEqual(inv["zorin"]["vars"]["sshd_service_name"], "ssh")
+
+        if os.path.exists("/tmp/.fleet_targets_cache"):
+            os.remove("/tmp/.fleet_targets_cache")
+        targets = get_completion_targets()
+        self.assertIn("zorin", targets)
+
     @patch("urllib.request.build_opener")
     def test_fetch_orangutan_devices_bearer_auth(self, mock_build_opener):
         from inventory.orangutan import fetch_orangutan_devices

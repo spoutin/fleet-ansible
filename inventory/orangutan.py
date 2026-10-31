@@ -130,6 +130,8 @@ def classify_os_group(device: Dict[str, Any]) -> str:
         return "redhat"
     if "ubuntu" in hostname or "ubuntu" in notes or "ubuntu" in vendor:
         return "ubuntu"
+    if "zorin" in hostname or "zorin" in notes or "zorin" in vendor:
+        return "zorin"
     if "proxmox" in hostname or "pve" in hostname or "proxmox" in notes:
         return "proxmox"
     return "debian"
@@ -211,7 +213,7 @@ def find_devices_by_target(query: str, only_managed: bool = True) -> list:
 def get_completion_targets() -> list:
     """Return list of all completion targets (groups, hostnames, IPs) with fast cache."""
     targets = {
-        "hypervisors", "managed_hosts", "debian", "ubuntu",
+        "hypervisors", "managed_hosts", "debian", "ubuntu", "zorin",
         "alpine", "redhat", "proxmox", "truenas", "pve1", "pve2", "all"
     }
 
@@ -272,6 +274,7 @@ def build_inventory(only_managed: bool = True) -> Dict[str, Any]:
         "managed_hosts": {"hosts": [], "children": []},
         "debian": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},
         "ubuntu": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},
+        "zorin": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},
         "alpine": {"hosts": [], "vars": {"sshd_service_name": "sshd"}},
         "redhat": {"hosts": [], "vars": {"sshd_service_name": "sshd"}},
         "proxmox": {"hosts": [], "vars": {"sshd_service_name": "ssh"}},

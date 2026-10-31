@@ -9,10 +9,10 @@
     msg: "Skipping {{ inventory_hostname }}: TrueNAS appliance detected (/usr/bin/midclt). System updates are handled via TrueNAS middleware."
   when: truenas_midclt_stat.stat.exists
 
-- name: Apply Debian / Ubuntu updates
+- name: Apply Debian / Ubuntu / Zorin OS updates
   ansible.builtin.include_tasks: debian.yml
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_os_family in ['Debian', 'Zorin OS'] or ansible_distribution == 'Zorin OS'
     - not truenas_midclt_stat.stat.exists
 
 - name: Apply Alpine Linux updates
@@ -27,11 +27,12 @@
     - ansible_os_family == 'RedHat'
     - not truenas_midclt_stat.stat.exists
 
-- name: Notify if operating system family is unsupported
-  ansible.builtin.debug:
-    msg: "Warning: Operating system family '{{ ansible_os_family | default('unknown') }}' on {{ inventory_hostname }} is not supported by system_update."
+- name: Fail if operating system family is unsupported
+  ansible.builtin.fail:
+    msg: "Operating system family '{{ ansible_os_family | default('unknown') }}' (distribution: '{{ ansible_distribution | default('unknown') }}') on {{ inventory_hostname }} is not supported by system_update."
   when:
-    - ansible_os_family not in ['Debian', 'Alpine', 'RedHat']
+    - ansible_os_family not in ['Debian', 'Alpine', 'RedHat', 'Zorin OS']
+    - ansible_distribution != 'Zorin OS'
     - not truenas_midclt_stat.stat.exists
 
 - name: Handle reboot workflow
