@@ -1,10 +1,17 @@
 ---
+- name: Check if includedir /etc/sudoers.d already exists in /etc/sudoers
+  ansible.builtin.command: grep -qE '^(@includedir|#includedir) /etc/sudoers.d' /etc/sudoers
+  register: sudoers_include_check
+  failed_when: false
+  changed_when: false
+
 - name: Ensure #includedir /etc/sudoers.d exists in /etc/sudoers
   ansible.builtin.lineinfile:
     path: /etc/sudoers
     line: "#includedir /etc/sudoers.d"
     state: present
     validate: '/usr/sbin/visudo -cf %s'
+  when: sudoers_include_check.rc != 0
   ignore_errors: true
 
 - name: Ensure ansible service user exists
