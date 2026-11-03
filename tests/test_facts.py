@@ -36,6 +36,39 @@ class TestOrangutanFacts(unittest.TestCase):
         self.assertEqual(body["os_version"], "24.04.1 LTS")
         self.assertEqual(body["os_family"], "Linux")
 
+    def test_post_facts_format_with_mac_and_ip_target(self):
+        """Verify the payload structure sent when falling back to IP target with MAC included."""
+        ip = "10.0.0.50"
+        mac = "02:00:17:03:df:56"
+        token = "test-token-12345"
+        base_url = "http://10.0.0.1:291"
+        payload = {
+            "os": "Red Hat Enterprise Linux",
+            "os_version": "9.4",
+            "os_family": "Linux",
+            "mac": mac,
+        }
+
+        req = urllib.request.Request(
+            f"{base_url}/api/devices/{ip}/facts",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.full_url, "http://10.0.0.1:291/api/devices/10.0.0.50/facts")
+        self.assertEqual(req.get_header("Authorization"), "Bearer test-token-12345")
+        self.assertEqual(req.get_header("Content-type"), "application/json")
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["os"], "Red Hat Enterprise Linux")
+        self.assertEqual(body["os_version"], "9.4")
+        self.assertEqual(body["os_family"], "Linux")
+        self.assertEqual(body["mac"], "02:00:17:03:df:56")
+
     @patch("inventory.orangutan.get_openbao_secrets")
     @patch("inventory.orangutan.fetch_orangutan_devices")
     def test_inventory_populates_orangutan_token(self, mock_fetch, mock_secrets):
