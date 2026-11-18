@@ -12,6 +12,7 @@ class TestOrangutanFacts(unittest.TestCase):
         token = "test-token-12345"
         base_url = "http://10.0.0.1:291"
         payload = {
+            "hostname": "ubuntu-node1",
             "os": "Ubuntu",
             "os_version": "24.04.1 LTS",
             "os_family": "Linux",
@@ -32,6 +33,7 @@ class TestOrangutanFacts(unittest.TestCase):
         self.assertEqual(req.get_header("Authorization"), "Bearer test-token-12345")
         self.assertEqual(req.get_header("Content-type"), "application/json")
         body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["hostname"], "ubuntu-node1")
         self.assertEqual(body["os"], "Ubuntu")
         self.assertEqual(body["os_version"], "24.04.1 LTS")
         self.assertEqual(body["os_family"], "Linux")
@@ -43,6 +45,7 @@ class TestOrangutanFacts(unittest.TestCase):
         token = "test-token-12345"
         base_url = "http://10.0.0.1:291"
         payload = {
+            "hostname": "rhel-node",
             "os": "Red Hat Enterprise Linux",
             "os_version": "9.4",
             "os_family": "Linux",
@@ -64,6 +67,7 @@ class TestOrangutanFacts(unittest.TestCase):
         self.assertEqual(req.get_header("Authorization"), "Bearer test-token-12345")
         self.assertEqual(req.get_header("Content-type"), "application/json")
         body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["hostname"], "rhel-node")
         self.assertEqual(body["os"], "Red Hat Enterprise Linux")
         self.assertEqual(body["os_version"], "9.4")
         self.assertEqual(body["os_family"], "Linux")

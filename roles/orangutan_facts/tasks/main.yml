@@ -75,6 +75,7 @@
 - name: Construct facts payload
   ansible.builtin.set_fact:
     facts_payload:
+      hostname: "{{ ansible_hostname | default(ansible_nodename | default('')) }}"
       os: "{{ ansible_distribution | default(ansible_os_family) }}"
       os_version: "{{ ansible_distribution_version | default('') }}"
       os_family: "{{ ansible_os_family }}"
